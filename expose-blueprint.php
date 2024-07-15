@@ -138,7 +138,6 @@ class BlueprintGenerator {
 		);
 		$site_options = array();
 		foreach ( array(
-			'home',
 			'blogname',
 			'blogdescription',
 			'start_of_week',
