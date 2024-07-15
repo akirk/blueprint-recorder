@@ -70,6 +70,28 @@ class BlueprintGenerator {
 		return $cache[ $slug ];
 	}
 
+	public function check_theme_exists( $slug ) {
+		$cache_key = 'expose_blueprints_theme_exists';
+		$cache = get_transient( $cache_key );
+		if ( false === $cache ) {
+			$cache = array();
+		}
+
+		if ( ! isset( $cache[ $slug ] ) ) {
+			require_once ABSPATH . 'wp-admin/includes/theme-install.php';
+			$response = \themes_api(
+				'theme_information',
+				(object) array(
+					'slug' => $slug,
+				)
+			);
+			$cache[ $slug ] = ! is_wp_error( $response );
+			set_transient( $cache_key, $cache, DAY_IN_SECONDS );
+
+		}
+		return $cache[ $slug ];
+	}
+
 	public function generate_playground_blueprint() {
 		global $wp_version;
 		$steps = array();
@@ -94,6 +116,19 @@ class BlueprintGenerator {
 		}
 
 		$theme = wp_get_theme();
+		// check if the theme is in the WordPress.org theme directory
+		if ( $this->check_plugin_exists( $theme->get( 'TextDomain' ) ) ) {
+			$steps[] = array(
+				'step'         => 'installTheme',
+				'themeZipFile' => array(
+					'resource' => 'wordpress.org/themes',
+					'slug'     => $theme->get( 'TextDomain' ),
+				),
+			);
+		} else {
+			$proprietory_plugins[] = $theme->get( 'TextDomain' );
+		}
+
 		$steps[] = array(
 			'step'         => 'installTheme',
 			'themeZipFile' => array(
