@@ -98,10 +98,17 @@ class BlueprintGenerator {
 
 		$plugins = get_option( 'active_plugins' );
 		$plugin_steps = array();
-		$proprietory_plugins = array();
+		$ignored_plugins = array();
+		$ignore = array();
+		if ( isset( $_GET['ignore'] ) ) {
+			$ignore = explode( ',', $_GET['ignore'] );
+		}
 
 		foreach ( $plugins as $plugin ) {
 			$slug = explode( '/', $plugin )[0];
+			if ( in_array( $slug, $ignore ) || isset( $_GET['ignore_all_plugins'] ) ) {
+				continue;
+			}
 			if ( $this->check_plugin_exists( $slug ) ) {
 				$steps[] = array(
 					'step'          => 'installPlugin',
@@ -111,13 +118,12 @@ class BlueprintGenerator {
 					),
 				);
 			} else {
-				$proprietory_plugins[] = $slug;
+				$ignored_plugins[] = $slug;
 			}
 		}
 
 		$theme = wp_get_theme();
-		// check if the theme is in the WordPress.org theme directory
-		if ( $this->check_plugin_exists( $theme->get( 'TextDomain' ) ) ) {
+		if ( ! in_array( $theme->get( 'TextDomain' ), $ignore ) && $this->check_theme_exists( $theme->get( 'TextDomain' ) ) && ! isset( $_GET['ignore_theme'] )) {
 			$steps[] = array(
 				'step'         => 'installTheme',
 				'themeZipFile' => array(
@@ -126,7 +132,7 @@ class BlueprintGenerator {
 				),
 			);
 		} else {
-			$proprietory_plugins[] = $theme->get( 'TextDomain' );
+			$ignored_plugins[] = $theme->get( 'TextDomain' );
 		}
 
 		$steps[] = array(
@@ -155,7 +161,7 @@ class BlueprintGenerator {
 			'options' => $site_options,
 		);
 
-		if ( ! empty( $proprietory_plugins ) ) {
+		if ( ! empty( $ignored_plugins ) ) {
 			$steps[] = array(
 				'step' => 'mkdir',
 				'path' => 'wordpress/wp-content/mu-plugins',
@@ -163,7 +169,7 @@ class BlueprintGenerator {
 			);
 			$data = '<?php add_action(\'admin_notices\', function() {';
 			$data .= 'echo \'<div class="notice notice-error is-dismissible" id="expose-blueprint-plugin-message"><p><strong>The following plugins were not loaded since they are not available in the WordPress.org plugin directory:</strong></p><ul>';
-			foreach ( $proprietory_plugins as $plugin ) {
+			foreach ( $ignored_plugins as $plugin ) {
 				$data .= '<li>' . esc_html( $plugin ) . '</li>';
 			}
 			$data .= '</ul></div>\';';
