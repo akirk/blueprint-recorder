@@ -78,7 +78,7 @@ class BlueprintGenerator {
 		}
 
 		if ( ! isset( $cache[ $slug ] ) ) {
-			require_once ABSPATH . 'wp-admin/includes/theme-install.php';
+			require_once ABSPATH . 'wp-admin/includes/theme.php';
 			$response = \themes_api(
 				'theme_information',
 				(object) array(
@@ -135,13 +135,6 @@ class BlueprintGenerator {
 			$ignored_plugins[] = $theme->get( 'TextDomain' );
 		}
 
-		$steps[] = array(
-			'step'         => 'installTheme',
-			'themeZipFile' => array(
-				'resource' => 'wordpress.org/themes',
-				'slug'     => $theme->get( 'TextDomain' ),
-			),
-		);
 		$site_options = array();
 		foreach ( array(
 			'blogname',
