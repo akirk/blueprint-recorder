@@ -1,4 +1,4 @@
-# Expose WordPress Playground Blueprint
+# Blueprint Recorder
 
 This plugin exposes the WordPress Playground Blueprint for the current site so that it can be loaded using the WordPress Playground:
 
