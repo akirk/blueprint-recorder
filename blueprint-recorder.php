@@ -43,12 +43,19 @@ class BlueprintRecorder {
 	public function add_cors_support() {
 		add_filter(
 			'rest_pre_serve_request',
-			function ( $value ) {
-				header( 'Access-Control-Allow-Origin: https://playground.wordpress.net' );
-				header( 'Access-Control-Allow-Methods: GET' );
-				header( 'Access-Control-Allow-Credentials: true' );
+			function ( $value, $result, $request ) {
+				if ( $request->get_route() !== '/playground/v1/blueprint' ) {
+					return $value;
+				}
+				if ( isset( $_SERVER['HTTP_ORIGIN'] ) && 'https://playground.wordpress.net' === $_SERVER['HTTP_ORIGIN'] ) {
+					header( 'Access-Control-Allow-Origin: https://playground.wordpress.net' );
+					header( 'Access-Control-Allow-Methods: GET' );
+					header( 'Access-Control-Allow-Credentials: true' );
+				}
 				return $value;
-			}
+			},
+			10,
+			3
 		);
 	}
 
