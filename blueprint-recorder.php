@@ -232,7 +232,11 @@ class BlueprintRecorder {
 		if ( ! empty( $sql_logs ) ) {
 			$steps[] = array(
 				'step' => 'runSql',
-				'sql'  => $sql_logs,
+				'sql'  => array(
+					'resource' => 'literal',
+					'name'     => 'replay.sql',
+					'contents' => join( ';' . PHP_EOL, $sql_logs ),
+				),
 			);
 		}
 
