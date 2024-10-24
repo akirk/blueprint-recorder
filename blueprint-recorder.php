@@ -15,6 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 use WP_REST_Controller;
 use WP_REST_Server;
 use WP_Query;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ZipArchive;
 
 class BlueprintRecorder {
 	private $is_enabled = true;
@@ -246,6 +249,15 @@ class BlueprintRecorder {
 			);
 		}
 
+		$steps[] = array(
+			"step" => "unzip",
+			"zipFile"=> array(
+				"resource"=> "url",
+				"url"=> 'https://playground.wordpress.net/cors-proxy.php?MEDIA_ZIP_URL'
+			),
+			"extractToPath" => "/wordpress/wp-content/uploads"
+		);
+
 		$blueprint = array(
 			'landingPage'         => '/wp-admin/',
 			'preferredVersions'   => array(
@@ -261,6 +273,37 @@ class BlueprintRecorder {
 		);
 
 		return $blueprint;
+	}
+
+	public function render_admin_page() {
+		$blueprint = $this->generate_blueprint();
+
+		?><div class="wrap">
+		<h1>Blueprint</h1>
+			<a href="?media_zip_download" downloxd="media-files.zip">Download the ZIP file of all media</a> and then upload it to somewhere web accessible.<br>
+			Then, enter the URL of the uploaded ZIP file: <input type="url" id="zip-url" value="" />. The blueprint below will update.<br>
+
+			<a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
+			<textarea id="blueprint" cols="120" rows="50" style="font-family: monospace"><?php echo esc_html( wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ); ?></textarea>
+
+			<script>
+				const originalBlueprint = document.getElementById('blueprint').value;
+				function update_blueprint() {
+					var blueprint = originalBlueprint;
+					blueprint = blueprint.replace( /MEDIA_ZIP_URL/g, document.getElementById('zip-url').value );
+					blueprint = blueprint.replace( /<?php echo esc_html( preg_quote( home_url(), '/' ) ); ?>/g, 'HOME_URL' );
+					document.getElementById('playground-link').href = 'https://playground.wordpress.net/#' + encodeURIComponent(blueprint);
+					document.getElementById('blueprint').value = blueprint;
+
+				}
+				document.getElementById('zip-url').addEventListener('keyup', update_blueprint );
+				document.getElementById('blueprint').addEventListener('keyup', update_blueprint );
+
+
+
+			</script>
+		</div>
+		<?php
 	}
 
 	public function add_admin_menu() {
@@ -288,26 +331,44 @@ class BlueprintRecorder {
 			delete_option( 'blueprint_recorder_disabled' );
 		}
 	}
-	public function render_admin_page() {
-		$blueprint = $this->generate_blueprint();
-
-		?><div class="wrap">
-		<h1>Blueprint</h1>
-			<form method="post">
-				<?php echo wp_nonce_field( 'blueprint' ); ?>
-				<?php if ( get_option( 'blueprint_recorder_disabled' ) ) : ?>
-					<button name="start-recording">Resume Recording</button>
-				<?php else: ?>
-					<button name="stop-recording">Stop Recording</button>
-				<?php endif; ?>
-			</form>
-			<a href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
-			<textarea cols="120" rows="50" style="font-family: monospace"><?php echo esc_html( wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ); ?></textarea>
-		</div>
-		<?php
-	}
 
 	public function init() {
+		if (isset($_GET['media_zip_download'])) {
+			$uploads = wp_upload_dir();
+			$media_dir = $uploads['basedir'];
+			$zip_file = 'media-files.zip';
+
+			// Create a new ZipArchive instance
+			$zip = new ZipArchive();
+			if ($zip->open($zip_file, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
+				$files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($media_dir));
+
+				foreach ($files as $file) {
+					if (!$file->isDir()) {
+						$zip->addFile($file->getRealPath(), str_replace($media_dir . '/', '', $file->getRealPath()));
+					}
+				}
+				$zip->close();
+
+				// Force download the ZIP file
+				header('Content-Type: application/zip');
+				header('Content-disposition: attachment; filename=' . basename($zip_file));
+				header('Content-Length: ' . filesize($zip_file));
+
+				// Clear output buffer
+				ob_clean();
+				flush();
+
+				readfile($zip_file);
+
+				// Delete the zip file from the server after download
+				unlink($zip_file);
+				exit;
+			} else {
+				echo 'Failed to create ZIP file.';
+			}
+		}
+
 		if ( get_option( 'blueprint_recorder_disabled' ) ) {
 			$this->is_enabled = false;
 		}
