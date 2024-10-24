@@ -245,7 +245,7 @@ class BlueprintRecorder {
 			) . PHP_EOL;
 			$steps[] = array(
 				'step' => 'runPHP',
-				'code'  => '<?php require_once "wordpress/wp-load.php"; ' . $part1 . str_replace( home_url(), 'HOME_URL', join( $part2 . $part1, wp_slash( $sql_logs ) ) ) . $part2,
+				'code'  => '<?php require_once "wordpress/wp-load.php"; ' . $part1 . str_replace( home_url(), 'HOME_URL', join( $part2 . $part1, str_replace( '"', '\\"', $sql_logs ) ) ) . $part2,
 			);
 		}
 
@@ -288,16 +288,28 @@ class BlueprintRecorder {
 
 			<script>
 				const originalBlueprint = document.getElementById('blueprint').value;
-				function update_blueprint() {
+
+				function encodeStringAsBase64(str) {
+					return encodeUint8ArrayAsBase64(new TextEncoder().encode(str));
+				}
+
+				function encodeUint8ArrayAsBase64(bytes) {
+					const binString = String.fromCodePoint(...bytes);
+					return btoa(binString);
+				}
+
+				function updateBlueprint() {
 					var blueprint = originalBlueprint;
 					blueprint = blueprint.replace( /MEDIA_ZIP_URL/g, document.getElementById('zip-url').value );
 					blueprint = blueprint.replace( /<?php echo esc_html( preg_quote( home_url(), '/' ) ); ?>/g, 'HOME_URL' );
-					document.getElementById('playground-link').href = 'https://playground.wordpress.net/#' + encodeURIComponent(blueprint);
+					const query = 'blueprint-url=data:application/json;base64,' + encodeURIComponent( encodeStringAsBase64( blueprint ) );
+
+					document.getElementById('playground-link').href = 'https://playground.wordpress.net/?' + query;
 					document.getElementById('blueprint').value = blueprint;
 
 				}
-				document.getElementById('zip-url').addEventListener('keyup', update_blueprint );
-				document.getElementById('blueprint').addEventListener('keyup', update_blueprint );
+				document.getElementById('zip-url').addEventListener('keyup', updateBlueprint );
+				document.getElementById('blueprint').addEventListener('keyup', updateBlueprint );
 
 
 
