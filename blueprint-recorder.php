@@ -230,11 +230,19 @@ class BlueprintRecorder {
 
 		wp_reset_postdata();
 		if ( ! empty( $sql_logs ) ) {
-			$part1 = '$sql = "';
-			$part2 = '"; error_log( $sql );  $wp_query->query( $sql ); error_log( $wpdb->last_error );';
+			$part1 = PHP_EOL . '$sql = str_replace( "HOME_URL", home_url(), "';
+			$part2 = join(
+				PHP_EOL,
+					array(
+					'" );',
+					'error_log( $sql );',
+					'$wp_query->query( $sql );',
+					'error_log( $wpdb->last_error );',
+				)
+			) . PHP_EOL;
 			$steps[] = array(
 				'step' => 'runPHP',
-				'code'  => '<?php require_once "wordpress/wp-load.php"; ' . $part1 . join( $part2 . $part1, wp_slash( $sql_logs ) ) . $part2,
+				'code'  => '<?php require_once "wordpress/wp-load.php"; ' . $part1 . str_replace( home_url(), 'HOME_URL', join( $part2 . $part1, wp_slash( $sql_logs ) ) ) . $part2,
 			);
 		}
 
