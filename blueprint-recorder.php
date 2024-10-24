@@ -227,7 +227,7 @@ class BlueprintRecorder {
 		if ( $query->have_posts() ) {
 			while ( $query->have_posts() ) {
 				$query->the_post();
-				$sql_logs[] = get_the_content() . ";\n";
+				$sql_logs[] = str_replace( PHP_EOL, '\n', get_the_content() );
 			}
 		}
 
@@ -238,7 +238,7 @@ class BlueprintRecorder {
 				'sql'  => array(
 					'resource' => 'literal',
 					'name'     => 'replay.sql',
-					'contents' => join( ';' . PHP_EOL, $sql_logs ),
+					'contents' => join( ";\n", $sql_logs ),
 				),
 			);
 		}
