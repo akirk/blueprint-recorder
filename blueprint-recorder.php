@@ -230,13 +230,11 @@ class BlueprintRecorder {
 
 		wp_reset_postdata();
 		if ( ! empty( $sql_logs ) ) {
+			$part1 = '$sql = "';
+			$part2 = '"; error_log( $sql );  $wp_query->query( $sql ); error_log( $wpdb->last_error );';
 			$steps[] = array(
-				'step' => 'runSql',
-				'sql'  => array(
-					'resource' => 'literal',
-					'name'     => 'replay.sql',
-					'contents' => join( ';' . PHP_EOL, $sql_logs ),
-				),
+				'step' => 'runPHP',
+				'code'  => '<?php require_once "wordpress/wp-load.php"; ' . $part1 . join( $part2 . $part1, $sql_logs ) . $part2,
 			);
 		}
 
