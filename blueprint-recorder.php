@@ -196,7 +196,7 @@ class BlueprintRecorder {
 
 		$steps[] = array(
 			'step'    => 'defineWpConfigConsts',
-			'consts' => array( 'WP_DEBUG', 'true' ),
+			'consts' => array( 'WP_DEBUG' => 'true' ),
 		);
 
 		if ( ! empty( $ignored_plugins ) ) {
@@ -421,6 +421,10 @@ class BlueprintRecorder {
 		if ( strpos( $query, 'auto-draft' ) !== false ) {
 			return $query;
 		}
+
+		// make sure the post content is not modified
+		remove_all_filters( 'content_save_pre' );
+		remove_all_filters( 'content_edit_pre' );
 
 		$this->is_logging = true;
 		wp_insert_post(
