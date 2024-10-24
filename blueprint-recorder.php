@@ -214,6 +214,8 @@ class BlueprintRecorder {
 		$args = array(
 			'post_type'      => 'sql_log',
 			'posts_per_page' => -1,
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
 		);
 
 		$query = new WP_Query( $args );
