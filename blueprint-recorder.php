@@ -194,6 +194,11 @@ class BlueprintRecorder {
 			'options' => $site_options,
 		);
 
+		$steps[] = array(
+			'step'    => 'defineWpConfigConsts',
+			'consts' => array( 'WP_DEBUG', 'true' ),
+		);
+
 		if ( ! empty( $ignored_plugins ) ) {
 			$steps[] = array(
 				'step' => 'mkdir',
