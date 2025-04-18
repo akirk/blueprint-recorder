@@ -347,6 +347,14 @@ class BlueprintRecorder {
 				<summary>Theme</summary>
 				<label><input type="checkbox" id="ignore-theme" onclick="updateBlueprint()"> Ignore Theme</label><br>
 			</details>
+			<details id="select-users">
+				<summary>Users</summary>
+				<?php foreach ( get_users() as $u ) : ?>
+					<?php if ( 'admin' !== $u->user_login ) : ?>
+						<label><input type="checkbox" data-login="<?php echo esc_attr( $u->user_login ); ?>" data-name="<?php echo esc_attr( $u->display_name ); ?>" data-role="<?php echo esc_attr( $u->roles[0] ); ?>" onchange="updateBlueprint()" /> <?php echo esc_html( $u->display_name ); ?></label><br/>
+					<?php endif; ?>
+				<?php endforeach; ?>
+			</details>
 			<br>
 			→ <a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
 			<br>
@@ -385,6 +393,12 @@ class BlueprintRecorder {
 						additionalOptionsList.appendChild(li);
 					}
 				}
+				const users = JSON.parse( localStorage.getItem( 'blueprint_recorder_users' ) || '[]' );
+				document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
+					if ( users.includes( checkbox.getAttribute('data-login') ) ) {
+						checkbox.checked = true;
+					}
+				} );
 				updateBlueprint();
 
 				function updateBlueprint() {
@@ -424,6 +438,21 @@ class BlueprintRecorder {
 							localStorage.removeItem( 'blueprint_recorder_ignore_theme' );
 						}
 						steps.push( blueprint.steps[i] );
+					}
+					const users = [];
+					document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
+						if ( checkbox.checked ) {
+							users.push( checkbox.getAttribute('data-login') );
+							steps.push( {
+								'step' : 'runPHP',
+								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $data = array( 'user_login' => '" + checkbox.dataset.login + "', 'display_name' => '" + checkbox.dataset.name + "', 'role' => '" + checkbox.dataset.role + "' ); wp_insert_user( $data ); ?>",
+							} );
+						}
+					} );
+					if ( users.length ) {
+						localStorage.setItem( 'blueprint_recorder_users', JSON.stringify( users ) );
+					} else {
+						localStorage.removeItem( 'blueprint_recorder_users' );
 					}
 					blueprint.steps = steps;
 					blueprint = JSON.stringify( blueprint, null, 4 );
