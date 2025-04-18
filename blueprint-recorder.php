@@ -22,6 +22,7 @@ use ZipArchive;
 class BlueprintRecorder {
 	private $is_enabled = true;
 	private $is_logging = false;
+	private $ignored_plugins = array();
 	public function __construct() {
 		add_action( 'rest_api_init', array( $this, 'register_playground_blueprint_endpoint' ) );
 		add_action( 'rest_api_init', array( $this, 'add_cors_support' ) );
@@ -160,7 +161,6 @@ class BlueprintRecorder {
 
 		$plugins = get_option( 'active_plugins' );
 		$plugin_steps = array();
-		$ignored_plugins = array();
 		$ignore = array();
 		$ignore_all_plugins = false;
 		$ignore_theme = false;
@@ -192,7 +192,7 @@ class BlueprintRecorder {
 					'name'       => $plugin_data['Name'],
 				);
 			} else {
-				$ignored_plugins[] = $slug;
+				$this->ignored_plugins[] = $slug;
 			}
 		}
 
@@ -206,7 +206,7 @@ class BlueprintRecorder {
 				),
 			);
 		} else {
-			$ignored_plugins[] = $theme->get( 'TextDomain' );
+			$this->ignored_plugins[] = $theme->get( 'TextDomain' );
 		}
 
 		$site_options = array();
@@ -232,26 +232,6 @@ class BlueprintRecorder {
 			'step'   => 'defineWpConfigConsts',
 			'consts' => array( 'WP_DEBUG' => 'true' ),
 		);
-
-		if ( ! empty( $ignored_plugins ) ) {
-			$steps[] = array(
-				'step' => 'mkdir',
-				'path' => 'wordpress/wp-content/mu-plugins',
-
-			);
-			$data = '<' . '?php add_action("admin_notices", function() {';
-			$data .= 'echo "<div class="notice notice-error is-dismissible" id="blueprint-recorder-message"><p><strong>The following plugins were not loaded since they are not available in the WordPress.org plugin directory:</strong></p><ul>';
-			foreach ( $ignored_plugins as $plugin ) {
-				$data .= '<li>' . esc_html( $plugin ) . '</li>';
-			}
-			$data .= '</ul></div>";';
-			$data .= '});';
-			$steps[] = array(
-				'step' => 'writeFile',
-				'path' => 'wordpress/wp-content/mu-plugins/blueprint-recorder-message.php',
-				'data' => $data,
-			);
-		}
 
 		$args = array(
 			'post_type'      => 'sql_log',
@@ -355,7 +335,7 @@ class BlueprintRecorder {
 			</details>
 
 			<details>
-				<summary>Include Plugins</summary>
+				<summary>Plugins</summary>
 			<?php foreach ( $blueprint['steps'] as $k => $step ) : ?>
 					<?php if ( 'installPlugin' === $step['step'] ) : ?>
 						<label><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" /> <?php echo esc_html( $step['name'] ); ?></label><br/>
@@ -363,7 +343,13 @@ class BlueprintRecorder {
 					<?php endforeach; ?>
 			</details>
 
-			<a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
+			<details>
+				<summary>Theme</summary>
+				<label><input type="checkbox" id="ignore-theme" onclick="updateBlueprint()"> Ignore Theme</label><br>
+			</details>
+			<br>
+			→ <a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
+			<br>
 			<textarea id="blueprint" cols="120" rows="50" style="font-family: monospace"><?php echo esc_html( wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ); ?></textarea>
 			<script>
 				const originaBlueprint = document.getElementById('blueprint').value;
@@ -379,8 +365,11 @@ class BlueprintRecorder {
 				let blueprint = JSON.parse( originaBlueprint );
 				for ( let i = 0; i < blueprint.steps.length; i++ ) {
 					if ( blueprint.steps[i].step === 'installPlugin' && localStorage.getItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name ) ) {
-							document.getElementById('use_plugin_' + i).checked = false;
-						}
+						document.getElementById('use_plugin_' + i).checked = false;
+					}
+					if ( blueprint.steps[i].step === 'installTheme' && localStorage.getItem( 'blueprint_recorder_ignore_theme' ) ) {
+						document.getElementById('ignore-theme').checked = true;
+					}
 				}
 				const additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '{}' );
 				const additionalOptionsList = document.getElementById('additionaloptions');
@@ -426,6 +415,13 @@ class BlueprintRecorder {
 									blueprint.steps[i].options[key] = additionalOptions[key];
 								}
 							}
+						}
+						if ( blueprint.steps[i].step === 'installTheme' ) {
+							if ( document.getElementById('ignore-theme').checked ) {
+								localStorage.setItem( 'blueprint_recorder_ignore_theme', true );
+								continue;
+							}
+							localStorage.removeItem( 'blueprint_recorder_ignore_theme' );
 						}
 						steps.push( blueprint.steps[i] );
 					}
