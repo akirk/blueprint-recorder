@@ -321,6 +321,14 @@ class BlueprintRecorder {
 				details label {
 					cursor: pointer;
 				}
+				details ul li span {
+					margin-right: 5px;
+					cursor: pointer;
+				}
+				details ul li span:hover {
+					color: #f00;
+					text-decoration: line-through;
+				}
 			</style>
 			<details>
 				<summary>Add Media</summary>
@@ -379,7 +387,12 @@ class BlueprintRecorder {
 				for ( const key in additionalOptions ) {
 					if ( additionalOptions.hasOwnProperty( key ) ) {
 						const li = document.createElement('li');
-						li.textContent = key + ': ' + additionalOptions[key];
+						const k = document.createElement('span');
+						k.textContent = key;
+						li.appendChild(k);
+						const value = document.createElement('tt');
+						value.textContent = additionalOptions[key];
+						li.appendChild(value);
 						additionalOptionsList.appendChild(li);
 					}
 				}
@@ -444,7 +457,12 @@ class BlueprintRecorder {
 						localStorage.setItem( 'blueprint_recorder_additional_options', JSON.stringify( additionalOptions ) );
 						const additionalOptionsList = document.getElementById('additionaloptions');
 						const li = document.createElement('li');
-						li.textContent = optionName + ': ' + additionalOptions[optionName];
+						const key = document.createElement('span');
+						key.textContent = optionName;
+						li.appendChild(key);
+						const value = document.createElement('tt');
+						value.textContent = additionalOptions[optionName];
+						li.appendChild(value);
 						additionalOptionsList.appendChild(li);
 						document.getElementById('option-name').value = '';
 						document.getElementById('option-value').textContent = '';
@@ -454,17 +472,28 @@ class BlueprintRecorder {
 				document.getElementById('zip-url').addEventListener('keyup', updateBlueprint );
 				document.getElementById('blueprint').addEventListener('keyup', updateBlueprint );
 				document.addEventListener('click', function (event) {
-					if ( event.target.matches('#additionaloptions li') ) {
-						const key = event.target.textContent.split(':')[0];
+					if ( event.target.matches('#additionaloptions li span') ) {
+						const key = event.target.textContent;
 						if ( confirm('Do you want delete the option ' + key + '?') ) {
 							const additionalOptionsList = document.getElementById('additionaloptions');
-							const li = event.target;
+							const li = event.target.closest('li');
 							li.parentNode.removeChild(li);
 							delete additionalOptions[key];
 							localStorage.setItem( 'blueprint_recorder_additional_options', JSON.stringify( additionalOptions ) );
 							updateBlueprint();
 						}
+						return;
 					}
+					if ( event.target.matches('#additionaloptions li tt') ) {
+						// select the text
+						const range = document.createRange();
+						range.selectNodeContents(event.target);
+						const sel = window.getSelection();
+						sel.removeAllRanges();
+						sel.addRange(range);
+						return;
+					}
+
 				});
 			</script>
 		</div>
