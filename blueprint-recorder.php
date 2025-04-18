@@ -29,6 +29,25 @@ class BlueprintRecorder {
 		add_filter( 'query', array( $this, 'log_query' ) );
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
 		add_action( 'admin_post_clear_sql_logs', array( $this, 'clear_sql_logs' ) );
+		add_action(
+			'admin_bar_menu',
+			function ( $admin_bar ) {
+				if ( ! current_user_can( 'manage_options' ) ) {
+					return;
+				}
+				if ( ! $this->is_enabled ) {
+					return;
+				}
+				$admin_bar->add_node(
+					array(
+						'id'    => 'blueprint-recorder',
+						'title' => 'Blueprint: Recording SQL Queries',
+						'href'  => admin_url( 'admin.php?page=blueprint' ),
+					)
+				);
+			},
+			100
+		);
 	}
 
 	public function register_playground_blueprint_endpoint() {
@@ -87,10 +106,10 @@ class BlueprintRecorder {
 						'resource' => 'wordpress.org/plugins',
 						'slug'     => $slug,
 					);
-				} elseif ( preg_match( '#https://github\.com/([^/]+/[^/]+)/archive/refs/(heads|tags)/([^/]+)\.zip#', $response->download_link, $matches)) {
+				} elseif ( preg_match( '#https://github\.com/([^/]+/[^/]+)/archive/refs/(heads|tags)/([^/]+)\.zip#', $response->download_link, $matches ) ) {
 					$cache[ $slug ] = array(
 						'resource' => 'url',
-						'url'     => "https://github-proxy.com/proxy/?repo={$matches[1]}&release={$matches[3]}",
+						'url'      => "https://github-proxy.com/proxy/?repo={$matches[1]}&release={$matches[3]}",
 					);
 				}
 			}
@@ -123,6 +142,18 @@ class BlueprintRecorder {
 		return $cache[ $slug ];
 	}
 
+	public function generate_media_step() {
+
+		return array(
+			'step'          => 'unzip',
+			'zipFile'       => array(
+				'resource' => 'url',
+				'url'      => 'https://playground.wordpress.net/cors-proxy.php?MEDIA_ZIP_URL',
+			),
+			'extractToPath' => '/wordpress/wp-content/uploads',
+		);
+	}
+
 	public function generate_blueprint() {
 		global $wp_version;
 		$steps = array();
@@ -151,11 +182,14 @@ class BlueprintRecorder {
 			if ( in_array( $slug, $ignore ) || $ignore_all_plugins ) {
 				continue;
 			}
-			$plugin_zip = $this->get_plugin_resource( $slug );
-			if ( $plugin_zip ) {
+			$plugin_resource = $this->get_plugin_resource( $slug );
+
+			if ( $plugin_resource ) {
+				$plugin_data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin );
 				$steps[] = array(
-					'step'          => 'installPlugin',
-					'pluginZipFile' => $plugin_zip,
+					'step'       => 'installPlugin',
+					'pluginData' => $plugin_resource,
+					'name'       => $plugin_data['Name'],
 				);
 			} else {
 				$ignored_plugins[] = $slug;
@@ -195,7 +229,7 @@ class BlueprintRecorder {
 		);
 
 		$steps[] = array(
-			'step'    => 'defineWpConfigConsts',
+			'step'   => 'defineWpConfigConsts',
 			'consts' => array( 'WP_DEBUG' => 'true' ),
 		);
 
@@ -248,15 +282,6 @@ class BlueprintRecorder {
 			);
 		}
 
-		$steps[] = array(
-			"step" => "unzip",
-			"zipFile"=> array(
-				"resource"=> "url",
-				"url"=> 'https://playground.wordpress.net/cors-proxy.php?MEDIA_ZIP_URL'
-			),
-			"extractToPath" => "/wordpress/wp-content/uploads"
-		);
-
 		$blueprint = array(
 			'landingPage'         => '/wp-admin/',
 			'preferredVersions'   => array(
@@ -279,15 +304,61 @@ class BlueprintRecorder {
 
 		?><div class="wrap">
 		<h1>Blueprint</h1>
-			<a href="?media_zip_download" downloxd="media-files.zip">Download the ZIP file of all media</a> and then upload it to somewhere web accessible.<br>
-			Then, enter the URL of the uploaded ZIP file: <input type="url" id="zip-url" value="" />. The blueprint below will update.<br>
+		<form method="post">
+			<?php echo wp_nonce_field( 'blueprint' ); ?>
+			<?php if ( get_option( 'blueprint_recorder_disabled' ) ) : ?>
+					<button name="start-recording">Resume Recording</button>
+				<?php else : ?>
+					<button name="stop-recording">Stop Recording</button>
+				<?php endif; ?>
+			</form>
+			<style>
+				details summary  {
+					cursor: pointer;
+					font-weight: bold;
+					margin-top: 10px;
+				}
+				details label {
+					cursor: pointer;
+				}
+			</style>
+			<details>
+				<summary>Add Media</summary>
+				<a href="?media_zip_download" downloxd="media-files.zip">Download the ZIP file of all media</a> and then upload it to somewhere web accessible.<br>
+				Then, enter the URL of the uploaded ZIP file: <input type="url" id="zip-url" value="" />. The blueprint below will update.<br>
+			</details>
+
+			<details>
+				<summary>Add Options</summary>
+				<ul id="additionaloptions"></ul>
+				<datalist id="options">
+					<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
+						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $name ); ?>" />
+					<?php endforeach; ?>
+				</datalist>
+				<datalist id="option-values">
+					<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
+						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" />
+					<?php endforeach; ?>
+				</datalist>
+				<input type="text" id="option-name" list="options" placeholder="Option Name" size="30" onchange="updateOptionValue()" onkeyup="updateOptionValue()"/>
+				<span id="option-value"></span>
+				<button onclick="addOptionToBlueprint()">Add</button>
+			</details>
+
+			<details>
+				<summary>Include Plugins</summary>
+			<?php foreach ( $blueprint['steps'] as $k => $step ) : ?>
+					<?php if ( 'installPlugin' === $step['step'] ) : ?>
+						<label><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" /> <?php echo esc_html( $step['name'] ); ?></label><br/>
+					<?php endif; ?>
+					<?php endforeach; ?>
+			</details>
 
 			<a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
 			<textarea id="blueprint" cols="120" rows="50" style="font-family: monospace"><?php echo esc_html( wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ); ?></textarea>
-
 			<script>
-				const originalBlueprint = document.getElementById('blueprint').value;
-
+				const originaBlueprint = document.getElementById('blueprint').value;
 				function encodeStringAsBase64(str) {
 					return encodeUint8ArrayAsBase64(new TextEncoder().encode(str));
 				}
@@ -297,24 +368,107 @@ class BlueprintRecorder {
 					return btoa(binString);
 				}
 
+				let blueprint = JSON.parse( originaBlueprint );
+				for ( let i = 0; i < blueprint.steps.length; i++ ) {
+					if ( blueprint.steps[i].step === 'installPlugin' && localStorage.getItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name ) ) {
+							document.getElementById('use_plugin_' + i).checked = false;
+						}
+				}
+				const additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '{}' );
+				const additionalOptionsList = document.getElementById('additionaloptions');
+				for ( const key in additionalOptions ) {
+					if ( additionalOptions.hasOwnProperty( key ) ) {
+						const li = document.createElement('li');
+						li.textContent = key + ': ' + additionalOptions[key];
+						additionalOptionsList.appendChild(li);
+					}
+				}
+				updateBlueprint();
+
 				function updateBlueprint() {
-					var blueprint = originalBlueprint;
-					blueprint = blueprint.replace( /MEDIA_ZIP_URL/g, document.getElementById('zip-url').value );
-					blueprint = blueprint.replace( /<?php echo esc_html( preg_quote( home_url(), '/' ) ); ?>/g, 'HOME_URL' );
+					let blueprint = JSON.parse( originaBlueprint );
+					if ( document.getElementById('zip-url').value ) {
+						blueprint.steps.push( {
+							'step'          : 'unzip',
+							'zipFile'       : {
+								'resource' : 'url',
+								'url'      : 'https://playground.wordpress.net/cors-proxy.php?' + document.getElementById('zip-url').value,
+							},
+							'extractToPath' : '/wordpress/wp-content/uploads',
+						} );
+					}
+					const steps = [];
+					for ( let i = 0; i < blueprint.steps.length; i++ ) {
+						if ( blueprint.steps[i].step === 'installPlugin' ) {
+							if ( ! document.getElementById('use_plugin_' + i).checked ) {
+								localStorage.setItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name, true );
+								continue;
+							}
+							localStorage.removeItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name );
+							delete blueprint.steps[i].name;
+						}
+						if ( blueprint.steps[i].step === 'setSiteOptions' ) {
+							for ( const key in additionalOptions ) {
+								if ( additionalOptions.hasOwnProperty( key ) ) {
+									blueprint.steps[i].options[key] = additionalOptions[key];
+								}
+							}
+						}
+						steps.push( blueprint.steps[i] );
+					}
+					blueprint.steps = steps;
+					blueprint = JSON.stringify( blueprint, null, 4 );
 					const query = 'blueprint-url=data:application/json;base64,' + encodeURIComponent( encodeStringAsBase64( blueprint ) );
 
 					document.getElementById('playground-link').href = 'https://playground.wordpress.net/?' + query;
 					document.getElementById('blueprint').value = blueprint;
 
 				}
+
+				function updateOptionValue() {
+					const optionName = document.getElementById('option-name').value;
+					if ( optionName ) {
+						const optionValue = document.querySelector( '#option-values option[label="' + optionName + '"]' );
+						if ( optionValue ) {
+							document.getElementById('option-value').textContent = optionValue.getAttribute('value');
+							return optionValue.getAttribute('value');
+						}
+					}
+					return false;
+				}
+
+				function addOptionToBlueprint() {
+					const optionName = document.getElementById('option-name').value;
+					if ( optionName ) {
+						additionalOptions[optionName] = updateOptionValue();
+						localStorage.setItem( 'blueprint_recorder_additional_options', JSON.stringify( additionalOptions ) );
+						const additionalOptionsList = document.getElementById('additionaloptions');
+						const li = document.createElement('li');
+						li.textContent = optionName + ': ' + additionalOptions[optionName];
+						additionalOptionsList.appendChild(li);
+						document.getElementById('option-name').value = '';
+						document.getElementById('option-value').textContent = '';
+						updateBlueprint();
+					}
+				}
 				document.getElementById('zip-url').addEventListener('keyup', updateBlueprint );
 				document.getElementById('blueprint').addEventListener('keyup', updateBlueprint );
-
-
-
+				document.addEventListener('click', function (event) {
+					if ( event.target.matches('#additionaloptions li') ) {
+						const key = event.target.textContent.split(':')[0];
+						if ( confirm('Do you want delete the option ' + key + '?') ) {
+							const additionalOptionsList = document.getElementById('additionaloptions');
+							const li = event.target;
+							li.parentNode.removeChild(li);
+							delete additionalOptions[key];
+							localStorage.setItem( 'blueprint_recorder_additional_options', JSON.stringify( additionalOptions ) );
+							updateBlueprint();
+						}
+					}
+				});
 			</script>
 		</div>
-		<?php
+				<?php
 	}
 
 	public function add_admin_menu() {
@@ -344,36 +498,36 @@ class BlueprintRecorder {
 	}
 
 	public function init() {
-		if (isset($_GET['media_zip_download'])) {
+		if ( isset( $_GET['media_zip_download'] ) ) {
 			$uploads = wp_upload_dir();
 			$media_dir = $uploads['basedir'];
 			$zip_file = 'media-files.zip';
 
 			// Create a new ZipArchive instance
 			$zip = new ZipArchive();
-			if ($zip->open($zip_file, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
-				$files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($media_dir));
+			if ( $zip->open( $zip_file, ZipArchive::CREATE | ZipArchive::OVERWRITE ) === true ) {
+				$files = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $media_dir ) );
 
-				foreach ($files as $file) {
-					if (!$file->isDir()) {
-						$zip->addFile($file->getRealPath(), str_replace($media_dir . '/', '', $file->getRealPath()));
+				foreach ( $files as $file ) {
+					if ( ! $file->isDir() ) {
+						$zip->addFile( $file->getRealPath(), str_replace( $media_dir . '/', '', $file->getRealPath() ) );
 					}
 				}
 				$zip->close();
 
 				// Force download the ZIP file
-				header('Content-Type: application/zip');
-				header('Content-disposition: attachment; filename=' . basename($zip_file));
-				header('Content-Length: ' . filesize($zip_file));
+				header( 'Content-Type: application/zip' );
+				header( 'Content-disposition: attachment; filename=' . basename( $zip_file ) );
+				header( 'Content-Length: ' . filesize( $zip_file ) );
 
 				// Clear output buffer
 				ob_clean();
 				flush();
 
-				readfile($zip_file);
+				readfile( $zip_file );
 
 				// Delete the zip file from the server after download
-				unlink($zip_file);
+				unlink( $zip_file );
 				exit;
 			} else {
 				echo 'Failed to create ZIP file.';
