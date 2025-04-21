@@ -266,6 +266,11 @@ class BlueprintRecorder {
 			'options' => $site_options,
 		);
 
+		$steps[] = array(
+			'step' => 'runPHP',
+			'code' => '<' . '?php require_once \'wordpress/wp-load.php\'; foreach ( array( \'post\', \'page\', \'attachment\', \'revision\', \'nav_menu_item\' ) as $post_type ) { $posts = get_posts( array(\'posts_per_page\' => -1, \'post_type\' => $post_type ) ); foreach ($posts as $post) wp_delete_post($post->ID, true); }',
+		);
+
 		$blueprint = array(
 			'landingPage'         => '/',
 			'preferredVersions'   => array(
@@ -313,6 +318,14 @@ class BlueprintRecorder {
 				#select-users input[type="checkbox"]:checked + label + label.password {
 					display: inline;
 				}
+				.wp-core-ui .button.button-destructive {
+					color: #a00;
+					border-color: #b00;
+				}
+				.wp-core-ui .button.button-destructive:hover {
+					background-color: #b00;
+					color: #fff;
+				}
 			</style>
 			<details <?php echo get_option( 'blueprint_recorder_disabled' ) ? '' : 'open'; ?> id="select-sql-log">
 				<summary>Record SQL Queries <span class="checked"></span></summary>
@@ -354,6 +367,23 @@ class BlueprintRecorder {
 				<?php endforeach; ?>
 			</details>
 
+			<details id="select-templates">
+				<summary>Templates <span class="checked"></span></summary>
+						<?php
+						foreach ( get_posts(
+							array(
+								'post_type'   => 'wp_template',
+								'numberposts' => -1,
+								'taxonomy'    => 'wp_theme',
+								'term'        => wp_get_theme()->get_stylesheet(),
+							)
+						) as $template ) :
+							?>
+					<label><input type="checkbox" <?php echo $checked; ?> data-id="<?php echo esc_attr( $template->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $template->post_title ); ?>" data-post_name="<?php echo esc_attr( $template->post_name ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template->post_content ) ); ?>"/> <?php echo esc_html( $template->post_title ); ?></label><br/>
+
+						<?php endforeach; ?>
+			</details>
+
 			<details id="select-template-parts">
 				<summary>Template Parts <span class="checked"></span></summary>
 						<?php
@@ -366,7 +396,7 @@ class BlueprintRecorder {
 							)
 						) as $template_part ) :
 							?>
-					<label><input type="checkbox" <?php echo $checked; ?> data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
+					<label><input type="checkbox" <?php echo $checked; ?> data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_name="<?php echo esc_attr( $template_part->post_name ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
 
 						<?php endforeach; ?>
 			</details>
@@ -429,7 +459,7 @@ class BlueprintRecorder {
 
 			<details id="select-theme">
 				<summary>Theme</summary>
-				<label><input type="checkbox" id="ignore-theme" onclick="updateBlueprint()"> Ignore Theme</label><br>
+				<label><input type="checkbox" id="ignore-theme" onclick="updateBlueprint()"> Use Default Theme</label><br>
 			</details>
 			<details id="select-users">
 				<summary>Users <span class="checked"></span></summary>
@@ -451,6 +481,8 @@ class BlueprintRecorder {
 			<br/>
 			<br/>
 			<button id="copy-blueprint" class="button">Copy the blueprint to clipboard</button>
+			<button id="clear-local-storage" class="button button-destructive" style="margin-left: 10em">Reset Previous Selections</button>
+			<br>
 			<br>
 
 			<textarea id="blueprint" cols="120" rows="50" style="font-family: monospace"><?php echo esc_html( wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ); ?></textarea>
@@ -534,6 +566,12 @@ class BlueprintRecorder {
 				const pages = JSON.parse( localStorage.getItem( 'blueprint_recorder_pages' ) || '[]' );
 				document.querySelectorAll( '#select-pages input[type="checkbox"]' ).forEach( function ( checkbox ) {
 					if ( pages.includes( checkbox.getAttribute('data-id') ) ) {
+						checkbox.checked = true;
+					}
+				} );
+				const templates = JSON.parse( localStorage.getItem( 'blueprint_recorder_templates' ) || '[]' );
+				document.querySelectorAll( '#select-templates input[type="checkbox"]' ).forEach( function ( checkbox ) {
+					if ( templates.includes( checkbox.getAttribute('data-id') ) ) {
 						checkbox.checked = true;
 					}
 				} );
@@ -659,7 +697,7 @@ class BlueprintRecorder {
 							pages.push( checkbox.getAttribute('data-id') );
 							steps.push( {
 								'step' : 'runPHP',
-								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; wp_insert_post( array( 'post_type' => 'page', 'post_title' => '" + checkbox.dataset.post_title.replace( /'/g, "\\'" ) + "', 'post_content' => '" + checkbox.dataset.post_content.replace( /'/g, "\\'" ).replace( /\\n/g, "\n" ) + "', 'post_status' => 'publish', ) ); } ?>",
+								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; wp_insert_post( array( 'post_type' => 'page', 'post_title' => '" + checkbox.dataset.post_title.replace( /'/g, "\\'" ) + "', 'post_content' => '" + checkbox.dataset.post_content.replace( /'/g, "\\'" ).replace( /\\n/g, "\n" ) + "', 'post_status' => 'publish' ) );",
 							});
 						}
 					} );
@@ -675,7 +713,7 @@ class BlueprintRecorder {
 							template_parts.push( checkbox.getAttribute('data-id') );
 							steps.push( {
 								'step' : 'runPHP',
-								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $theme = wp_get_theme(); $term = get_term_by( 'slug', $theme->get_stylesheet(), 'wp_theme'); if ( ! $term) { $term = wp_insert_term( $theme->get_stylesheet(), 'wp_theme', ); $term_id = $term['term_id']; } else { $term_id = $term->term_id; } $post_id = wp_insert_post( array( 'post_type' => 'wp_template_part', 'post_title' => '" + checkbox.dataset.post_title.replace( /'/g, "\\'" ) + "', 'post_content' => '" + checkbox.dataset.post_content.replace( /'/g, "\\'" ).replace( /\\n/g, "\n" ) + "', 'post_status' => 'publish' ) ); wp_set_object_terms($post_id, $term_id, 'wp_theme'); ?>",
+								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $theme = wp_get_theme(); $term = get_term_by( 'slug', $theme->get_stylesheet(), 'wp_theme'); if ( ! $term) { $term = wp_insert_term( $theme->get_stylesheet(), 'wp_theme' ); $term_id = $term['term_id']; } else { $term_id = $term->term_id; } $post_id = wp_insert_post( array( 'post_type' => 'wp_template_part', 'post_title' => '" + checkbox.dataset.post_title.replace( /'/g, "\\'" ) + "', 'post_name' => '" + checkbox.dataset.post_name.replace( /'/g, "\\'" ) + "', 'post_content' => '" + checkbox.dataset.post_content.replace( /'/g, "\\'" ).replace( /\\n/g, "\n" ) + "', 'post_status' => 'publish' ) ); wp_set_object_terms($post_id, $term_id, 'wp_theme');",
 							} );
 						}
 					} );
@@ -685,6 +723,22 @@ class BlueprintRecorder {
 						localStorage.removeItem( 'blueprint_recorder_template_parts' );
 					}
 					document.querySelector( '#select-template-parts .checked' ).textContent = template_parts.length ? ' (' + template_parts.length + ')' : '';
+					const templates = [];
+					document.querySelectorAll( '#select-templates input[type="checkbox"]' ).forEach( function ( checkbox ) {
+						if ( checkbox.checked ) {
+							templates.push( checkbox.getAttribute('data-id') );
+							steps.push( {
+								'step' : 'runPHP',
+								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $theme = wp_get_theme(); $term = get_term_by( 'slug', $theme->get_stylesheet(), 'wp_theme'); if ( ! $term) { $term = wp_insert_term( $theme->get_stylesheet(), 'wp_theme' ); $term_id = $term['term_id']; } else { $term_id = $term->term_id; } $post_id = wp_insert_post( array( 'post_type' => 'wp_template', 'post_title' => '" + checkbox.dataset.post_title.replace( /'/g, "\\'" ) + "', 'post_name' => '" + checkbox.dataset.post_name.replace( /'/g, "\\'" ) + "', 'post_content' => '" + checkbox.dataset.post_content.replace( /'/g, "\\'" ).replace( /\\n/g, "\n" ) + "', 'post_status' => 'publish' ) ); wp_set_object_terms($post_id, $term_id, 'wp_theme');",
+							} );
+						}
+					} );
+					if ( templates.length ) {
+						localStorage.setItem( 'blueprint_recorder_templates', JSON.stringify( templates ) );
+					} else {
+						localStorage.removeItem( 'blueprint_recorder_templates' );
+					}
+					document.querySelector( '#select-templates .checked' ).textContent = templates.length ? ' (' + templates.length + ')' : '';
 
 					const sqlLog = document.getElementById('sql-log');
 					let sql = '';
@@ -873,9 +927,24 @@ class BlueprintRecorder {
 						event.target.textContent = 'Copy the blueprint to clipboard';
 					}, 2000);
 				});
+				document.getElementById('clear-local-storage').addEventListener('click', function (event) {
+					event.preventDefault();
+					localStorage.removeItem( 'blueprint_recorder_additional_options' );
+					localStorage.removeItem( 'blueprint_recorder_users' );
+					localStorage.removeItem( 'blueprint_recorder_passwords' );
+					localStorage.removeItem( 'blueprint_recorder_constants' );
+					localStorage.removeItem( 'blueprint_recorder_template_parts' );
+					localStorage.removeItem( 'blueprint_recorder_ignore_plugins' );
+					localStorage.removeItem( 'blueprint_recorder_pages' );
+					localStorage.removeItem( 'blueprint_recorder_zip_url' );
+					location.reload();
+				});
 			</script>
 		</div>
-							<?php
+		<?php
+
+		delete_option( 'blueprint_recorder_initial_options' );
+		delete_option( 'blueprint_recorder_initial_constants' );
 	}
 
 	public function add_admin_menu() {
