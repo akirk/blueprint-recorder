@@ -351,6 +351,7 @@ class BlueprintRecorder {
 						'posts_per_page' => -1,
 					)
 				) as $post ) :
+					$has_log = true;
 					?>
 						<option value="<?php echo esc_attr( $post->post_content ); ?>" title="<?php echo esc_attr( $post->post_content ); ?>" selected="selected"><?php echo esc_html( $post->post_content ); ?></option>
 					<?php endforeach; ?>
