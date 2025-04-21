@@ -92,6 +92,10 @@ class BlueprintRecorder {
 			$cache = array();
 		}
 
+		if ( substr( $slug, 0, 18 ) === 'blueprint-recorder' ) {
+			$slug = 'blueprint-recorder';
+		}
+
 		if ( ! isset( $cache[ $slug ] ) || 'blueprint-recorder' === $slug ) {
 			switch ( $slug ) {
 				case 'blueprint-recorder':
