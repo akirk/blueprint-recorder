@@ -96,27 +96,17 @@ class BlueprintRecorder {
 			$slug = 'blueprint-recorder';
 		}
 
-		if ( ! isset( $cache[ $slug ] ) || 'blueprint-recorder' === $slug ) {
-			switch ( $slug ) {
-				case 'blueprint-recorder':
-					$cache[ $slug ] = array(
-						'resource' => 'url',
-						'url'      => 'https://github-proxy.com/proxy/?repo=akirk/blueprint-recorder&branch=main',
-					);
-					break;
-				default:
-					require_once ABSPATH . 'wp-admin/includes/plugin-install.php';
-					$response = \plugins_api(
-						'plugin_information',
-						(object) array(
-							'slug' => $slug,
-						)
-					);
-					$cache[ $slug ] = false;
+		if ( ! isset( $cache[ $slug ] ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin-install.php';
+			$response = \plugins_api(
+				'plugin_information',
+				(object) array(
+					'slug' => $slug,
+				)
+			);
+			$cache[ $slug ] = false;
 
-					break;
-			}
-			if ( false === $cache[ $slug ] && ! is_wp_error( $response ) && isset( $response->download_link ) ) {
+			if ( ! is_wp_error( $response ) && isset( $response->download_link ) ) {
 				if ( 0 === strpos( $response->download_link, 'https://downloads.wordpress.org/plugin/' ) ) {
 					$cache[ $slug ] = array(
 						'resource' => 'wordpress.org/plugins',
@@ -159,7 +149,6 @@ class BlueprintRecorder {
 	}
 
 	public function generate_media_step() {
-
 		return array(
 			'step'          => 'unzip',
 			'zipFile'       => array(
@@ -190,6 +179,8 @@ class BlueprintRecorder {
 		if ( isset( $_GET['ignore_theme'] ) ) {
 			$ignore_theme = true;
 		}
+		$ignore[] = 'blueprint-recorder';
+		$ignore[] = 'blueprint-recorder-main';
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		$plugin_steps = array();
 		$dependent_upon = array();
@@ -452,9 +443,15 @@ class BlueprintRecorder {
 					<?php endforeach; ?>
 				</ul>
 			</details>
+
 			<br>
-			→ <a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Open a new WordPress Playground with the blueprint below</a><br/>
+			→ <a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Open a new WordPress Playground with the blueprint below</a>
+			&nbsp;<label><input type="checkbox" id="include-blueprint-recorder" checked onchange="updateBlueprint()" />Include the Blueprint Recorder plugin</label>
+			<br/>
+			<br/>
+			<button id="copy-blueprint" class="button">Copy the blueprint to clipboard</button>
 			<br>
+
 			<textarea id="blueprint" cols="120" rows="50" style="font-family: monospace"><?php echo esc_html( wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ); ?></textarea>
 			<script>
 				const originaBlueprint = document.getElementById('blueprint').value;
@@ -566,7 +563,7 @@ class BlueprintRecorder {
 							'extractToPath' : '/wordpress/wp-content/uploads',
 						} );
 					}
-					let last_step = null;
+					const includeBlueprintRecorder = document.getElementById('include-blueprint-recorder').checked;
 					const steps = [], plugins = [], ignore_plugins = [];
 					for ( let i = 0; i < blueprint.steps.length; i++ ) {
 						if ( blueprint.steps[i].step === 'installPlugin' ) {
@@ -576,10 +573,6 @@ class BlueprintRecorder {
 							}
 							delete blueprint.steps[i].name;
 							delete blueprint.steps[i].info;
-							if ( blueprint.steps[i].pluginData?.url?.indexOf('blueprint-recorder') > -1 ) {
-								last_step = blueprint.steps[i];
-								continue;
-							}
 							plugins.push( blueprint.steps[i].pluginData.slug );
 						}
 						if ( blueprint.steps[i].step === 'setSiteOptions' ) {
@@ -609,13 +602,13 @@ class BlueprintRecorder {
 						}
 						steps.push( blueprint.steps[i] );
 					}
-					if ( ignore_plugins.length) {
+					if ( ignore_plugins.length ) {
 						localStorage.setItem( 'blueprint_recorder_ignore_plugins', JSON.stringify( ignore_plugins ) );
 					} else {
 						localStorage.removeItem( 'blueprint_recorder_ignore_plugins' );
 					}
 
-					document.querySelector( '#select-plugins .checked' ).textContent = (plugins.length + (last_step ? 1 : 0)) ? ' (' + (plugins.length + (last_step ? 1 : 0)) + ')' : '';
+					document.querySelector( '#select-plugins .checked' ).textContent = plugins.length ? ' (' + plugins.length + ')' : '';
 					const users = [], passwords = [];
 					document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
 						if ( checkbox.checked ) {
@@ -709,10 +702,18 @@ class BlueprintRecorder {
 							}
 						} );
 					}
+					blueprint.steps = steps;
+					document.getElementById('blueprint').value = JSON.stringify( blueprint, null, 4 );
 
-					if ( last_step ) {
-						steps.push( last_step );
-						steps.push( {
+					if ( includeBlueprintRecorder ) {
+						blueprint.steps.push( {
+							'step' : 'installPlugin',
+							'pluginData' : {
+								'resource' : 'url',
+								'url'      : 'https://github-proxy.com/proxy/?repo=akirk/blueprint-recorder&branch=main',
+							}
+						} );
+						blueprint.steps.push( {
 							'step' : 'setSiteOptions',
 							'options' : {
 								'blueprint_recorder_initial_constants' : constants,
@@ -721,13 +722,8 @@ class BlueprintRecorder {
 							}
 						} );
 					}
-
-					blueprint.steps = steps;
-					blueprint = JSON.stringify( blueprint, null, 4 );
-					const query = 'blueprint-url=data:application/json;base64,' + encodeURIComponent( encodeStringAsBase64( blueprint ) );
-
+					const query = 'blueprint-url=data:application/json;base64,' + encodeURIComponent( encodeStringAsBase64( JSON.stringify( blueprint, null, 4 ) ) );
 					document.getElementById('playground-link').href = 'https://playground.wordpress.net/?' + query;
-					document.getElementById('blueprint').value = blueprint;
 
 				}
 
@@ -813,7 +809,6 @@ class BlueprintRecorder {
 					}
 				}
 				document.getElementById('zip-url').addEventListener('keyup', updateBlueprint );
-				document.getElementById('blueprint').addEventListener('keyup', updateBlueprint );
 
 				document.addEventListener('change', function (event) {
 					if ( event.target.matches('input') ) {
@@ -854,6 +849,17 @@ class BlueprintRecorder {
 						checkbox.checked = false;
 					});
 					updateBlueprint();
+				});
+				document.getElementById('copy-blueprint').addEventListener('click', function (event) {
+					event.preventDefault();
+					const blueprint = document.getElementById('blueprint');
+					blueprint.select();
+					document.execCommand('copy');
+					event.target.textContent = 'Copied!';
+					blueprint.setSelectionRange(0, 0);
+					setTimeout(function () {
+						event.target.textContent = 'Copy the blueprint to clipboard';
+					}, 2000);
 				});
 			</script>
 		</div>
