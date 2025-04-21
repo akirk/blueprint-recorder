@@ -42,7 +42,7 @@ class BlueprintRecorder {
 				$admin_bar->add_node(
 					array(
 						'id'    => 'blueprint-recorder',
-						'title' => 'Blueprint: Recording SQL Queries',
+						'title' => 'Blueprint: Recording Modifying SQL Queries',
 						'href'  => admin_url( 'admin.php?page=blueprint' ),
 					)
 				);
