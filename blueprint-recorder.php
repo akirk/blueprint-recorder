@@ -17,6 +17,7 @@ use WP_REST_Server;
 use WP_Query;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use stdClass;
 use ZipArchive;
 
 class BlueprintRecorder {
@@ -475,7 +476,7 @@ class BlueprintRecorder {
 						document.getElementById('select-theme').open = true;
 					}
 				}
-				let additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '<?php echo wp_json_encode( get_option( 'blueprint_recorder_initial_options', '{}' ) ); ?>' );
+				let additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '<?php echo esc_attr( wp_json_encode( get_option( 'blueprint_recorder_initial_options', new stdClass() ) ) ); ?>' );
 				const additionalOptionsList = document.getElementById('additionaloptions');
 				for ( const optionKey in additionalOptions ) {
 					if ( additionalOptions.hasOwnProperty( optionKey ) ) {
@@ -502,7 +503,7 @@ class BlueprintRecorder {
 						checkbox.checked = true;
 					}
 				} );
-				const constants = JSON.parse( localStorage.getItem( 'blueprint_recorder_constants' ) || '<?php echo wp_json_encode( get_option( 'blueprint_recorder_initial_constants', '{}' ) ); ?>' );
+				const constants = JSON.parse( localStorage.getItem( 'blueprint_recorder_constants' ) || '<?php echo esc_attr( wp_json_encode( get_option( 'blueprint_recorder_initial_constants', new stdClass() ) ) ); ?>' );
 				const constantsList = document.getElementById('additionalconstants');
 				for ( const constantKey in constants ) {
 					if ( constants.hasOwnProperty( constantKey ) ) {
@@ -759,7 +760,9 @@ class BlueprintRecorder {
 						value.value = additionalOptions[optionName];
 						li.appendChild(value);
 						additionalOptionsList.appendChild(li);
-
+						document.getElementById('option-name').value = '';
+						document.getElementById('option-value').textContent = '';
+						document.getElementById('option-name').focus();
 						updateBlueprint();
 					}
 				}
@@ -804,6 +807,9 @@ class BlueprintRecorder {
 								li.appendChild(value);
 								constantsList.appendChild(li);
 							}
+							document.getElementById('constant-name').value = '';
+							document.getElementById('constant-value').textContent = '';
+							document.getElementById('constant-name').focus();
 							updateBlueprint();
 						}
 					}
@@ -817,7 +823,13 @@ class BlueprintRecorder {
 				} );
 				document.addEventListener('keyup', function (event) {
 					if ( event.target.matches('input') ) {
-						updateBlueprint();
+						if ( event.target.id === 'option-name' && event.key === 'Enter' ) {
+							addOptionToBlueprint();
+						} else if ( event.target.id === 'constant-name' && event.key === 'Enter' ) {
+							addConstantToBlueprint();
+						} else {
+							updateBlueprint();
+						}
 					}
 				} );
 
