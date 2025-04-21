@@ -352,7 +352,7 @@ class BlueprintRecorder {
 					)
 				) as $post ) :
 					?>
-						<option value="<?php echo esc_attr( $post->post_content ); ?>" selected="selected"><?php echo esc_html( $post->post_content ); ?></option>
+						<option value="<?php echo esc_attr( $post->post_content ); ?>" title="<?php echo esc_attr( $post->post_content ); ?>" selected="selected"><?php echo esc_html( $post->post_content ); ?></option>
 					<?php endforeach; ?>
 					<?php if ( ! $has_log ) : ?>
 						<option value="" disabled="disabled">Logged SQL Queries will be displayed here</option>
