@@ -476,7 +476,7 @@ class BlueprintRecorder {
 						document.getElementById('select-theme').open = true;
 					}
 				}
-				let additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '<?php echo esc_attr( wp_json_encode( get_option( 'blueprint_recorder_initial_options', new stdClass() ) ) ); ?>' );
+				let additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '<?php echo wp_json_encode( get_option( 'blueprint_recorder_initial_options', new stdClass() ) ); ?>' );
 				const additionalOptionsList = document.getElementById('additionaloptions');
 				for ( const optionKey in additionalOptions ) {
 					if ( additionalOptions.hasOwnProperty( optionKey ) ) {
@@ -503,7 +503,7 @@ class BlueprintRecorder {
 						checkbox.checked = true;
 					}
 				} );
-				const constants = JSON.parse( localStorage.getItem( 'blueprint_recorder_constants' ) || '<?php echo esc_attr( wp_json_encode( get_option( 'blueprint_recorder_initial_constants', new stdClass() ) ) ); ?>' );
+				const constants = JSON.parse( localStorage.getItem( 'blueprint_recorder_constants' ) || '<?php echo wp_json_encode( get_option( 'blueprint_recorder_initial_constants', new stdClass() ) ); ?>' );
 				const constantsList = document.getElementById('additionalconstants');
 				for ( const constantKey in constants ) {
 					if ( constants.hasOwnProperty( constantKey ) ) {
