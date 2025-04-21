@@ -97,7 +97,7 @@ class BlueprintRecorder {
 				case 'blueprint-recorder':
 					$cache[ $slug ] = array(
 						'resource' => 'url',
-						'url'      => 'https://github-proxy.com/proxy/?repo=blueprint-recorder&branch=main',
+						'url'      => 'https://github-proxy.com/proxy/?repo=akirk/blueprint-recorder&branch=main',
 					);
 					break;
 				default:
@@ -274,7 +274,7 @@ class BlueprintRecorder {
 		}
 
 		$blueprint = array(
-			'landingPage'         => '/wp-admin/',
+			'landingPage'         => '/',
 			'preferredVersions'   => array(
 				'php' => substr( phpversion(), 0, 3 ),
 				'wp'  => $wp_version,
@@ -312,6 +312,12 @@ class BlueprintRecorder {
 					color: #f00;
 					text-decoration: line-through;
 				}
+				#select-users label.password {
+					display: none;
+				}
+				#select-users input[type="checkbox"]:checked + label + label.password {
+					display: inline;
+				}
 			</style>
 			<details <?php echo get_option( 'blueprint_recorder_disabled' ) ? '' : 'open'; ?>>
 				<summary>Record SQL Queries</summary>
@@ -325,15 +331,15 @@ class BlueprintRecorder {
 					<?php endif; ?>
 				</form>
 			</details>
-			<details>
-				<summary>Add Pages</summary>
+			<details id="select-pages">
+				<summary>Add Pages <span class="checked"></span></summary>
 			<?php foreach ( get_pages( array() ) as $page ) : ?>
-					<label><input type="checkbox" data-id="<?php echo esc_attr( $page->ID ); ?>" onchange="updateBlueprint()" /> <?php echo esc_html( $page->post_title ); ?></label><br/>
+					<label><input type="checkbox" data-id="<?php echo esc_attr( $page->ID ); ?>" onchange="updateBlueprint()" data-post_title="<?php echo esc_attr( $page->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $page->post_content ) ); ?>" /> <?php echo esc_html( $page->post_title ); ?></label><br/>
 				<?php endforeach; ?>
 			</details>
 
-			<details>
-				<summary>Add Template Parts</summary>
+			<details id="select-template-parts">
+				<summary>Add Template Parts <span class="checked"></span></summary>
 				<?php
 				foreach ( get_posts(
 					array(
@@ -344,22 +350,9 @@ class BlueprintRecorder {
 					)
 				) as $template_part ) :
 					?>
-					<label><input type="checkbox" data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" /> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
+					<label><input type="checkbox" data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
 
 				<?php endforeach; ?>
-			</details>
-			<details>
-				<summary>Add Widgets</summary>
-					<?php
-					foreach ( get_posts(
-						array(
-							'post_type'   => 'wp_block',
-							'numberposts' => -1,
-						)
-					) as $widget ) :
-						?>
-					<label><input type="checkbox" data-id="<?php echo esc_attr( $widget->ID ); ?>" onchange="updateBlueprint()" /> <?php echo esc_html( $widget->post_title ); ?></label><br/>
-					<?php endforeach; ?>
 			</details>
 
 			<details>
@@ -368,8 +361,8 @@ class BlueprintRecorder {
 				Then, enter the URL of the uploaded ZIP file: <input type="url" id="zip-url" value="" />. The blueprint below will update.<br>
 			</details>
 
-			<details>
-				<summary>Add Options</summary>
+			<details id="select-options">
+				<summary>Add Options <span class="checked"></span></summary>
 				<ul id="additionaloptions"></ul>
 				<datalist id="options">
 					<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
@@ -386,27 +379,32 @@ class BlueprintRecorder {
 				<button onclick="addOptionToBlueprint()">Add</button>
 			</details>
 
-			<details>
-				<summary>Plugins</summary>
+			<details id="select-plugins">
+				<summary>Plugins <span class="checked"></span></summary>
 					<p>You can drag plugins to put them in the right loading order</p>
 					<?php foreach ( $blueprint['steps'] as $k => $step ) : ?>
 						<?php if ( 'installPlugin' === $step['step'] ) : ?>
-						<label class="plugin"><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" /> <?php echo esc_html( $step['name'] ); ?></label><br/>
+						<label class="plugin" id="plugin_<?php echo esc_attr( $k ); ?>"><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" value="<?php echo esc_attr( $k ); ?>" /> <?php echo esc_html( $step['name'] ); ?></label><br/>
 					<?php endif; ?>
 					<?php endforeach; ?>
 			</details>
 
-			<details>
+			<details id="select-theme">
 				<summary>Theme</summary>
 				<label><input type="checkbox" id="ignore-theme" onclick="updateBlueprint()"> Ignore Theme</label><br>
 			</details>
 			<details id="select-users">
-				<summary>Users</summary>
+				<summary>Users <span class="checked"></span></summary>
+				<ul>
 					<?php foreach ( get_users() as $u ) : ?>
 						<?php if ( 'admin' !== $u->user_login ) : ?>
-						<label><input type="checkbox" data-login="<?php echo esc_attr( $u->user_login ); ?>" data-name="<?php echo esc_attr( $u->display_name ); ?>" data-role="<?php echo esc_attr( $u->roles[0] ); ?>" onchange="updateBlueprint()" /> <?php echo esc_html( $u->display_name ); ?></label><br/>
-					<?php endif; ?>
-				<?php endforeach; ?>
+							<li>
+								<input type="checkbox" data-login="<?php echo esc_attr( $u->user_login ); ?>" data-name="<?php echo esc_attr( $u->display_name ); ?>" data-role="<?php echo esc_attr( $u->roles[0] ); ?>" onchange="updateBlueprint()" id="user_<?php echo esc_attr( $u->user_login ); ?>" /> <label for="user_<?php echo esc_attr( $u->user_login ); ?>"><?php echo esc_html( $u->display_name ); ?></label>
+								<label class="password">Password: <input type="text" value="" placeholder="Set a password in the blueprint" onchange="updateBlueprint()"/></label><br/>
+							</li>
+						<?php endif; ?>
+					<?php endforeach; ?>
+				</ul>
 			</details>
 			<br>
 			→ <a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
@@ -430,6 +428,7 @@ class BlueprintRecorder {
 					}
 					if ( blueprint.steps[i].step === 'installTheme' && localStorage.getItem( 'blueprint_recorder_ignore_theme' ) ) {
 						document.getElementById('ignore-theme').checked = true;
+						document.getElementById('select-theme').open = true;
 					}
 				}
 				const additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '{}' );
@@ -452,6 +451,25 @@ class BlueprintRecorder {
 						checkbox.checked = true;
 					}
 				} );
+				const pages = JSON.parse( localStorage.getItem( 'blueprint_recorder_pages' ) || '[]' );
+				document.querySelectorAll( '#select-pages input[type="checkbox"]' ).forEach( function ( checkbox ) {
+					if ( pages.includes( checkbox.getAttribute('data-id') ) ) {
+						checkbox.checked = true;
+					}
+				} );
+				const template_parts = JSON.parse( localStorage.getItem( 'blueprint_recorder_template_parts' ) || '[]' );
+				document.querySelectorAll( '#select-template-parts input[type="checkbox"]' ).forEach( function ( checkbox ) {
+					if ( template_parts.includes( checkbox.getAttribute('data-id') ) ) {
+						checkbox.checked = true;
+					}
+				} );
+				const zipUrl = localStorage.getItem( 'blueprint_recorder_zip_url' );
+				if ( zipUrl ) {
+					document.getElementById('zip-url').value = zipUrl;
+				}
+				document.getElementById('zip-url').addEventListener('change', function (event) {
+					localStorage.setItem( 'blueprint_recorder_zip_url', event.target.value );
+				} );
 				updateBlueprint();
 
 				function updateBlueprint() {
@@ -466,7 +484,7 @@ class BlueprintRecorder {
 							'extractToPath' : '/wordpress/wp-content/uploads',
 						} );
 					}
-					const steps = [];
+					const steps = [], plugins = [];
 					for ( let i = 0; i < blueprint.steps.length; i++ ) {
 						if ( blueprint.steps[i].step === 'installPlugin' ) {
 							if ( ! document.getElementById('use_plugin_' + i).checked ) {
@@ -475,6 +493,7 @@ class BlueprintRecorder {
 							}
 							localStorage.removeItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name );
 							delete blueprint.steps[i].name;
+							plugins.push( blueprint.steps[i].pluginData.slug );
 						}
 						if ( blueprint.steps[i].step === 'setSiteOptions' ) {
 							for ( const key in additionalOptions ) {
@@ -492,58 +511,61 @@ class BlueprintRecorder {
 						}
 						steps.push( blueprint.steps[i] );
 					}
-					const users = [];
+					document.querySelector( '#select-plugins .checked' ).textContent = plugins.length ? ' (' + plugins.length + ')' : '';
+					const users = [], passwords = [];
 					document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
 						if ( checkbox.checked ) {
 							users.push( checkbox.getAttribute('data-login') );
+							const password = checkbox.parentNode.querySelector('.password input').value;
+							passwords.push( password );
 							steps.push( {
 								'step' : 'runPHP',
-								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $data = array( 'user_login' => '" + checkbox.dataset.login + "', 'display_name' => '" + checkbox.dataset.name + "', 'role' => '" + checkbox.dataset.role + "' ); wp_insert_user( $data ); ?>",
+								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $data = array( 'user_login' => '" + checkbox.dataset.login + "', 'display_name' => '" + checkbox.dataset.name.replace( /'/g, "\\'" ) + "', 'role' => '" + checkbox.dataset.role + "', 'user_pass' => '" + password.replace( /'/g, "\\'" ) + "' ); wp_insert_user( $data ); ?>",
 							} );
 						}
 					} );
 					if ( users.length ) {
 						localStorage.setItem( 'blueprint_recorder_users', JSON.stringify( users ) );
+						localStorage.setItem( 'blueprint_recorder_passwords', JSON.stringify( passwords ) );
 					} else {
 						localStorage.removeItem( 'blueprint_recorder_users' );
+						localStorage.removeItem( 'blueprint_recorder_passwords' );
 					}
+					document.querySelector( '#select-users .checked' ).textContent = users.length ? ' (' + users.length + ')' : '';
 
 					const pages = [];
-					document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
+					document.querySelectorAll( '#select-pages input[type="checkbox"]' ).forEach( function ( checkbox ) {
 						if ( checkbox.checked ) {
 							pages.push( checkbox.getAttribute('data-id') );
+							steps.push( {
+								'step' : 'runPHP',
+								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; wp_insert_post( array( 'post_type' => 'page', 'post_title' => '" + checkbox.dataset.post_title.replace( /'/g, "\\'" ) + "', 'post_content' => '" + checkbox.dataset.post_content.replace( /'/g, "\\'" ).replace( /\\n/g, "\n" ) + "', 'post_status' => 'publish', ) ); } ?>",
+							});
 						}
 					} );
 					if ( pages.length ) {
-						steps.push( {
-							'step' : 'runPHP',
-							'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $pages = " + JSON.stringify( pages ) + "; foreach ( $pages as $page_id ) { $page = get_post( $page_id ); wp_insert_post( array( 'post_type' => 'page', 'post_title' => $page->post_title, 'post_content' => $page->post_content, 'post_status' => 'publish', ) ); } ?>",
-						} );
+						localStorage.setItem( 'blueprint_recorder_pages', JSON.stringify( pages ) );
+					} else{
+						localStorage.removeItem( 'blueprint_recorder_pages' );
 					}
+					document.querySelector( '#select-pages .checked' ).textContent = pages.length ? ' (' + pages.length + ')' : '';
 					const template_parts = [];
-					document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
+					document.querySelectorAll( '#select-template-parts input[type="checkbox"]' ).forEach( function ( checkbox ) {
 						if ( checkbox.checked ) {
 							template_parts.push( checkbox.getAttribute('data-id') );
+							steps.push( {
+								'step' : 'runPHP',
+								'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $theme = wp_get_theme(); $term = get_term_by( 'slug', $theme->get_stylesheet(), 'wp_theme'); if ( ! $term) { $term = wp_insert_term( $theme->get_stylesheet(), 'wp_theme', ); $term_id = $term['term_id']; } else { $term_id = $term->term_id; } $post_id = wp_insert_post( array( 'post_type' => 'wp_template_part', 'post_title' => '" + checkbox.dataset.post_title.replace( /'/g, "\\'" ) + "', 'post_content' => '" + checkbox.dataset.post_content.replace( /'/g, "\\'" ).replace( /\\n/g, "\n" ) + "', 'post_status' => 'publish' ) ); wp_set_object_terms($post_id, $term_id, 'wp_theme'); ?>",
+							} );
 						}
 					} );
 					if ( template_parts.length ) {
-						steps.push( {
-							'step' : 'runPHP',
-							'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $theme = wp_get_theme(); $term = get_term_by('slug', $theme->get_stylesheet(), 'wp_theme'); if ( ! $term) { 	$term = wp_insert_term( $theme->get_stylesheet(), 'wp_theme', ); $term_id = $term['term_id']; } else { $term_id = $term->term_id; } $template_parts = " + JSON.stringify( template_parts ) + "; foreach ( $template_parts as $template_part_id ) { $template_part = get_post( $template_part_id ); wp_insert_post( array( 'post_type' => 'wp_template_part', 'post_title' => $template_part->post_title, 'post_content' => $template_part->post_content, 'post_status' => 'publish', 'taxonomy' => array( 'wp_theme' => array( $term_id ) ), ) ); } ?>",
-						} );
+						localStorage.setItem( 'blueprint_recorder_template_parts', JSON.stringify( template_parts ) );
+					} else {
+						localStorage.removeItem( 'blueprint_recorder_template_parts' );
 					}
-					const widgets = [];
-					document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
-						if ( checkbox.checked ) {
-							widgets.push( checkbox.getAttribute('data-id') );
-						}
-					} );
-					if ( widgets.length ) {
-						steps.push( {
-							'step' : 'runPHP',
-							'code' : "<" + "?php require_once 'wordpress/wp-load.php'; $widgets = " + JSON.stringify( widgets ) + "; foreach ( $widgets as $widget_id ) { $widget = get_post( $widget_id ); wp_insert_post( array( 'post_type' => 'wp_block', 'post_title' => $widget->post_title, 'post_content' => $widget->post_content, 'post_status' => 'publish', ) ); } ?>",
-						} );
-					}
+					console.log(template_parts)
+					document.querySelector( '#select-template-parts .checked' ).textContent = template_parts.length ? ' (' + template_parts.length + ')' : '';
 					blueprint.steps = steps;
 					blueprint = JSON.stringify( blueprint, null, 4 );
 					const query = 'blueprint-url=data:application/json;base64,' + encodeURIComponent( encodeStringAsBase64( blueprint ) );
@@ -611,10 +633,8 @@ class BlueprintRecorder {
 
 				});
 
-				// Add drag and drop functionality to the plugin list
 				const pluginList = document.querySelectorAll('.plugin');
 				pluginList.forEach( function ( plugin ) {
-					plugin.setAttribute('draggable', 'true');
 					plugin.addEventListener('dragstart', function (event) {
 						event.dataTransfer.setData('text/plain', event.target.id);
 					});
@@ -627,11 +647,11 @@ class BlueprintRecorder {
 						const draggedElement = document.getElementById(draggedId);
 						const targetElement = event.target.closest('.plugin');
 						if ( draggedElement && targetElement && draggedElement !== targetElement ) {
-							const parent = targetElement.parentNode;
-							parent.insertBefore(draggedElement, targetElement.nextSibling);
+							targetElement.parentNode.insertBefore(draggedElement, targetElement.nextSibling);
+							updateBlueprint();
 						}
 					});
-				});
+				} );
 			</script>
 		</div>
 		<?php
