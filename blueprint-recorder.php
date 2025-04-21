@@ -331,7 +331,7 @@ class BlueprintRecorder {
 					<a href="" id="select-all-sql-log">Select all</a> <a href="" id="select-none-sql-log">Select none</a>
 					<a href="<?php echo esc_url( admin_url( 'admin-post.php?action=clear_sql_logs' ) ); ?>">Clear all SQL logs</a><br/>
 
-					<select id="sql-log" multiple="multiple" size="10">
+					<select id="sql-log" multiple="multiple" size="10" style="max-width: 100%; width: 100%">
 					<?php
 					foreach ( get_posts(
 						array(
@@ -459,7 +459,6 @@ class BlueprintRecorder {
 
 				let blueprint = JSON.parse( originaBlueprint );
 				const ignorePlugins = JSON.parse( localStorage.getItem( 'blueprint_recorder_ignore_plugins' ) || '[]' );
-				console.log(ignorePlugins)
 				for ( let i = 0; i < blueprint.steps.length; i++ ) {
 					if ( blueprint.steps[i].step === 'installPlugin' &&  ignorePlugins.includes( blueprint.steps[i].name ) ) {
 						document.getElementById('use_plugin_' + i).checked = false;
@@ -561,7 +560,6 @@ class BlueprintRecorder {
 					const steps = [], plugins = [], ignore_plugins = [];
 					for ( let i = 0; i < blueprint.steps.length; i++ ) {
 						if ( blueprint.steps[i].step === 'installPlugin' ) {
-						console.log(i,document.getElementById('use_plugin_' + i).checked)
 						if ( ! document.getElementById('use_plugin_' + i).checked ) {
 								ignore_plugins.push( blueprint.steps[i].name );
 								continue;
@@ -943,6 +941,15 @@ class BlueprintRecorder {
 		// Don't log option changes.
 		if ( strpos( $query, 'wp_options' ) !== false ) {
 			return $query;
+		}
+		// Don't log certain usermeta changes.
+		if ( strpos( $query, 'wp_usermeta' ) !== false ) {
+			if ( strpos( $query, 'wp_user-settings-time' ) !== false ) {
+				return $query;
+			}
+			if ( strpos( $query, 'session_tokens' ) !== false ) {
+				return $query;
+			}
 		}
 		// Don't log auto-drafts.
 		if ( strpos( $query, 'auto-draft' ) !== false ) {
