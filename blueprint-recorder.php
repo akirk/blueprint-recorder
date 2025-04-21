@@ -187,7 +187,8 @@ class BlueprintRecorder {
 			$ignore_theme = true;
 		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
-
+		$plugin_steps = array();
+		$dependent_upon = array();
 		foreach ( $plugins as $plugin ) {
 			$slug = explode( '/', $plugin )[0];
 			if ( in_array( $slug, $ignore ) || $ignore_all_plugins ) {
@@ -197,14 +198,44 @@ class BlueprintRecorder {
 
 			if ( $plugin_resource ) {
 				$plugin_data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin );
-				$steps[] = array(
+				$plugin_steps[ $slug ] = array(
 					'step'       => 'installPlugin',
 					'pluginData' => $plugin_resource,
 					'name'       => $plugin_data['Name'],
+					'info'       => '',
 				);
+
+				if ( isset( $plugin_data['RequiresPlugins'] ) && ! empty( $plugin_data['RequiresPlugins'] ) ) {
+					foreach ( explode( ',', $plugin_data['RequiresPlugins'] ) as $dependent ) {
+						if ( ! isset( $dependent_upon[ $dependent ] ) ) {
+							$dependent_upon[ $dependent ] = array();
+						}
+						$dependent_upon[ $dependent ][] = $slug;
+					}
+				}
 			} else {
 				$this->ignored_plugins[] = $slug;
 			}
+		}
+
+		foreach ( $dependent_upon as $plugin => $dependents ) {
+			if ( ! isset( $plugin_steps[ $plugin ] ) ) {
+				continue;
+			}
+			$plugin_steps[ $plugin ]['info'] = ' (prioritized because of ' . implode(
+				', ',
+				array_map(
+					function ( $dependent ) use ( $plugin_steps ) {
+						return $plugin_steps[ $dependent ]['name'];
+					},
+					$dependents
+				)
+			) . ')';
+			$steps[] = $plugin_steps[ $plugin ];
+			unset( $plugin_steps[ $plugin ] );
+		}
+		foreach ( $plugin_steps as $plugin => $step ) {
+			$steps[] = $step;
 		}
 
 		$theme = wp_get_theme();
@@ -384,11 +415,11 @@ class BlueprintRecorder {
 
 			<details id="select-plugins">
 				<summary>Plugins <span class="checked"></span></summary>
-					<p>You can drag plugins to put them in the right loading order</p>
+					<a href="" id="select-all-plugins">Select all</a> <a href="" id="select-none-plugins">Select none</a>
 					<ul>
 					<?php foreach ( $blueprint['steps'] as $k => $step ) : ?>
 						<?php if ( 'installPlugin' === $step['step'] ) : ?>
-						<li class="plugin" id="plugin_<?php echo esc_attr( $k ); ?>"><label><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" value="<?php echo esc_attr( $k ); ?>" /> <?php echo esc_html( $step['name'] ); ?></label></li>
+						<li class="plugin" id="plugin_<?php echo esc_attr( $k ); ?>"><label><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" value="<?php echo esc_attr( $k ); ?>" /> <?php echo esc_html( $step['name'] . $step['info'] ); ?></label></li>
 					<?php endif; ?>
 					<?php endforeach; ?>
 					</ul>
@@ -427,8 +458,10 @@ class BlueprintRecorder {
 				}
 
 				let blueprint = JSON.parse( originaBlueprint );
+				const ignorePlugins = JSON.parse( localStorage.getItem( 'blueprint_recorder_ignore_plugins' ) || '[]' );
+				console.log(ignorePlugins)
 				for ( let i = 0; i < blueprint.steps.length; i++ ) {
-					if ( blueprint.steps[i].step === 'installPlugin' && localStorage.getItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name ) ) {
+					if ( blueprint.steps[i].step === 'installPlugin' &&  ignorePlugins.includes( blueprint.steps[i].name ) ) {
 						document.getElementById('use_plugin_' + i).checked = false;
 					}
 					if ( blueprint.steps[i].step === 'installTheme' && localStorage.getItem( 'blueprint_recorder_ignore_theme' ) ) {
@@ -525,16 +558,17 @@ class BlueprintRecorder {
 						} );
 					}
 					let last_step = null;
-					const steps = [], plugins = [];
+					const steps = [], plugins = [], ignore_plugins = [];
 					for ( let i = 0; i < blueprint.steps.length; i++ ) {
 						if ( blueprint.steps[i].step === 'installPlugin' ) {
-							if ( ! document.getElementById('use_plugin_' + i).checked ) {
-								localStorage.setItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name, true );
+						console.log(i,document.getElementById('use_plugin_' + i).checked)
+						if ( ! document.getElementById('use_plugin_' + i).checked ) {
+								ignore_plugins.push( blueprint.steps[i].name );
 								continue;
 							}
-							localStorage.removeItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name );
 							delete blueprint.steps[i].name;
-							if ( blueprint.steps[i].pluginData.url.indexOf('blueprint-recorder') > -1 ) {
+							delete blueprint.steps[i].info;
+							if ( blueprint.steps[i].pluginData?.url?.indexOf('blueprint-recorder') > -1 ) {
 								last_step = blueprint.steps[i];
 								continue;
 							}
@@ -567,7 +601,13 @@ class BlueprintRecorder {
 						}
 						steps.push( blueprint.steps[i] );
 					}
-					document.querySelector( '#select-plugins .checked' ).textContent = plugins.length ? ' (' + plugins.length + ')' : '';
+					if ( ignore_plugins.length) {
+						localStorage.setItem( 'blueprint_recorder_ignore_plugins', JSON.stringify( ignore_plugins ) );
+					} else {
+						localStorage.removeItem( 'blueprint_recorder_ignore_plugins' );
+					}
+
+					document.querySelector( '#select-plugins .checked' ).textContent = (plugins.length + (last_step ? 1 : 0)) ? ' (' + (plugins.length + (last_step ? 1 : 0)) + ')' : '';
 					const users = [], passwords = [];
 					document.querySelectorAll( '#select-users input[type="checkbox"]' ).forEach( function ( checkbox ) {
 						if ( checkbox.checked ) {
@@ -759,27 +799,6 @@ class BlueprintRecorder {
 				document.getElementById('zip-url').addEventListener('keyup', updateBlueprint );
 				document.getElementById('blueprint').addEventListener('keyup', updateBlueprint );
 
-				const pluginList = document.querySelectorAll('.plugin');
-				pluginList.forEach( function ( plugin ) {
-					plugin.addEventListener('dragstart', function (event) {
-					console.log(event)
-						event.dataTransfer.setData('text/plain', event.target.id);
-					});
-					plugin.addEventListener('dragover', function (event) {
-						event.preventDefault();
-					});
-					plugin.addEventListener('drop', function (event) {
-						event.preventDefault();
-						const draggedId = event.dataTransfer.getData('text/plain');
-						const draggedElement = document.getElementById(draggedId);
-						const targetElement = event.target.closest('.plugin');
-						if ( draggedElement && targetElement && draggedElement !== targetElement ) {
-							targetElement.parentNode.insertBefore(draggedElement, targetElement.nextSibling);
-							updateBlueprint();
-						}
-					});
-				} );
-
 				document.addEventListener('change', function (event) {
 					if ( event.target.matches('input') ) {
 						updateBlueprint();
@@ -790,6 +809,36 @@ class BlueprintRecorder {
 						updateBlueprint();
 					}
 				} );
+
+				document.getElementById('select-all-sql-log').addEventListener('click', function (event) {
+					event.preventDefault();
+					const sqlLog = document.getElementById('sql-log');
+					for ( let i = 0; i < sqlLog.options.length; i++ ) {
+						sqlLog.options[i].selected = true;
+					}
+				} );
+				document.getElementById('select-none-sql-log').addEventListener('click', function (event) {
+					event.preventDefault();
+					const sqlLog = document.getElementById('sql-log');
+					for ( let i = 0; i < sqlLog.options.length; i++ ) {
+						sqlLog.options[i].selected = false;
+					}
+				} );
+
+				document.getElementById('select-all-plugins').addEventListener('click', function (event) {
+					event.preventDefault();
+					document.querySelectorAll('#select-plugins input[type="checkbox"]').forEach(function (checkbox) {
+						checkbox.checked = true;
+					});
+					updateBlueprint();
+				});
+				document.getElementById('select-none-plugins').addEventListener('click', function (event) {
+					event.preventDefault();
+					document.querySelectorAll('#select-plugins input[type="checkbox"]').forEach(function (checkbox) {
+						checkbox.checked = false;
+					});
+					updateBlueprint();
+				});
 			</script>
 		</div>
 		<?php
