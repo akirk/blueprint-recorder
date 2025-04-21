@@ -23,274 +23,274 @@ class BlueprintRecorder {
 	private $is_enabled = true;
 	private $is_logging = false;
 	private $ignored_plugins = array();
-	public function __construct() {
-		add_action( 'rest_api_init', array( $this, 'register_playground_blueprint_endpoint' ) );
-		add_action( 'rest_api_init', array( $this, 'add_cors_support' ) );
-		add_action( 'init', array( $this, 'init' ) );
-		add_filter( 'query', array( $this, 'log_query' ) );
-		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
-		add_action( 'admin_post_clear_sql_logs', array( $this, 'clear_sql_logs' ) );
-		add_action(
-			'admin_bar_menu',
-			function ( $admin_bar ) {
-				if ( ! current_user_can( 'manage_options' ) ) {
-					return;
-				}
-				if ( ! $this->is_enabled ) {
-					return;
-				}
-				$admin_bar->add_node(
-					array(
-						'id'    => 'blueprint-recorder',
-						'title' => 'Blueprint: Recording SQL Queries',
-						'href'  => admin_url( 'admin.php?page=blueprint' ),
+public function __construct() {
+	add_action( 'rest_api_init', array( $this, 'register_playground_blueprint_endpoint' ) );
+	add_action( 'rest_api_init', array( $this, 'add_cors_support' ) );
+	add_action( 'init', array( $this, 'init' ) );
+	add_filter( 'query', array( $this, 'log_query' ) );
+	add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
+	add_action( 'admin_post_clear_sql_logs', array( $this, 'clear_sql_logs' ) );
+	add_action(
+		'admin_bar_menu',
+		function ( $admin_bar ) {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				return;
+			}
+			if ( ! $this->is_enabled ) {
+				return;
+			}
+			$admin_bar->add_node(
+				array(
+					'id'    => 'blueprint-recorder',
+					'title' => 'Blueprint: Recording SQL Queries',
+					'href'  => admin_url( 'admin.php?page=blueprint' ),
+				)
+			);
+		},
+		100
+	);
+}
+
+public function register_playground_blueprint_endpoint() {
+	register_rest_route(
+		'playground/v1',
+		'/blueprint',
+		array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( $this, 'generate_blueprint' ),
+			'permission_callback' => array( $this, 'permissions_check' ),
+		)
+	);
+}
+
+public function add_cors_support() {
+	add_filter(
+		'rest_pre_serve_request',
+		function ( $value, $result, $request ) {
+			if ( $request->get_route() !== '/playground/v1/blueprint' ) {
+				return $value;
+			}
+			if ( isset( $_SERVER['HTTP_ORIGIN'] ) && 'https://playground.wordpress.net' === $_SERVER['HTTP_ORIGIN'] ) {
+				header( 'Access-Control-Allow-Origin: https://playground.wordpress.net' );
+				header( 'Access-Control-Allow-Methods: GET' );
+				header( 'Access-Control-Allow-Credentials: true' );
+			}
+			return $value;
+		},
+		10,
+		3
+	);
+}
+
+public function permissions_check() {
+	return true;
+}
+public function get_plugin_resource( $slug ) {
+	$cache_key = 'blueprint_recorder_plugin_zip';
+	$cache = get_transient( $cache_key );
+	if ( false === $cache ) {
+		$cache = array();
+	}
+
+	if ( ! isset( $cache[ $slug ] ) || 'blueprint-recorder' === $slug ) {
+		switch ( $slug ) {
+			case 'blueprint-recorder':
+				$cache[ $slug ] = array(
+					'resource' => 'url',
+					'url'      => 'https://github-proxy.com/proxy/?repo=akirk/blueprint-recorder&branch=main',
+				);
+				break;
+			default:
+				require_once ABSPATH . 'wp-admin/includes/plugin-install.php';
+				$response = \plugins_api(
+					'plugin_information',
+					(object) array(
+						'slug' => $slug,
 					)
 				);
-			},
-			100
-		);
+				$cache[ $slug ] = false;
+
+				break;
+		}
+		if ( false === $cache[ $slug ] && ! is_wp_error( $response ) && isset( $response->download_link ) ) {
+			if ( 0 === strpos( $response->download_link, 'https://downloads.wordpress.org/plugin/' ) ) {
+				$cache[ $slug ] = array(
+					'resource' => 'wordpress.org/plugins',
+					'slug'     => $slug,
+				);
+			} elseif ( preg_match( '#https://github\.com/([^/]+/[^/]+)/archive/refs/(heads|tags)/([^/]+)\.zip#', $response->download_link, $matches ) ) {
+				$cache[ $slug ] = array(
+					'resource' => 'url',
+					'url'      => "https://github-proxy.com/proxy/?repo={$matches[1]}&release={$matches[3]}",
+				);
+			}
+		}
+
+		set_transient( $cache_key, $cache, DAY_IN_SECONDS );
+
+	}
+	return $cache[ $slug ];
+}
+
+public function check_theme_exists( $slug ) {
+	$cache_key = 'expose_blueprints_theme_exists';
+	$cache = get_transient( $cache_key );
+	if ( false === $cache ) {
+		$cache = array();
 	}
 
-	public function register_playground_blueprint_endpoint() {
-		register_rest_route(
-			'playground/v1',
-			'/blueprint',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'generate_blueprint' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+	if ( ! isset( $cache[ $slug ] ) ) {
+		require_once ABSPATH . 'wp-admin/includes/theme.php';
+		$response = \themes_api(
+			'theme_information',
+			(object) array(
+				'slug' => $slug,
 			)
 		);
-	}
+		$cache[ $slug ] = ! is_wp_error( $response );
+		set_transient( $cache_key, $cache, DAY_IN_SECONDS );
 
-	public function add_cors_support() {
-		add_filter(
-			'rest_pre_serve_request',
-			function ( $value, $result, $request ) {
-				if ( $request->get_route() !== '/playground/v1/blueprint' ) {
-					return $value;
-				}
-				if ( isset( $_SERVER['HTTP_ORIGIN'] ) && 'https://playground.wordpress.net' === $_SERVER['HTTP_ORIGIN'] ) {
-					header( 'Access-Control-Allow-Origin: https://playground.wordpress.net' );
-					header( 'Access-Control-Allow-Methods: GET' );
-					header( 'Access-Control-Allow-Credentials: true' );
-				}
-				return $value;
-			},
-			10,
-			3
-		);
 	}
+	return $cache[ $slug ];
+}
 
-	public function permissions_check() {
-		return true;
+public function generate_media_step() {
+
+	return array(
+		'step'          => 'unzip',
+		'zipFile'       => array(
+			'resource' => 'url',
+			'url'      => 'https://playground.wordpress.net/cors-proxy.php?MEDIA_ZIP_URL',
+		),
+		'extractToPath' => '/wordpress/wp-content/uploads',
+	);
+}
+
+public function generate_blueprint() {
+	global $wp_version;
+	$steps = array();
+
+	$plugins = get_option( 'active_plugins' );
+	$plugin_steps = array();
+	$ignore = array();
+	$ignore_all_plugins = false;
+	$ignore_theme = false;
+	// phpcs:disable WordPress.Security.NonceVerification.Recommended
+	if ( isset( $_GET['ignore'] ) ) {
+		// This is just a comma separated list of plugin slugs that is queried.
+		$ignore = explode( ',', wp_unslash( $_GET['ignore'] ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 	}
-	public function get_plugin_resource( $slug ) {
-		$cache_key = 'blueprint_recorder_plugin_zip';
-		$cache = get_transient( $cache_key );
-		if ( false === $cache ) {
-			$cache = array();
+	if ( isset( $_GET['ignore_all_plugins'] ) ) {
+		$ignore_all_plugins = true;
+	}
+	if ( isset( $_GET['ignore_theme'] ) ) {
+		$ignore_theme = true;
+	}
+	// phpcs:enable WordPress.Security.NonceVerification.Recommended
+	$plugin_steps = array();
+	$dependent_upon = array();
+	foreach ( $plugins as $plugin ) {
+		$slug = explode( '/', $plugin )[0];
+		if ( in_array( $slug, $ignore ) || $ignore_all_plugins ) {
+			continue;
 		}
+		$plugin_resource = $this->get_plugin_resource( $slug );
 
-		if ( ! isset( $cache[ $slug ] ) || 'blueprint-recorder' === $slug ) {
-			switch ( $slug ) {
-				case 'blueprint-recorder':
-					$cache[ $slug ] = array(
-						'resource' => 'url',
-						'url'      => 'https://github-proxy.com/proxy/?repo=akirk/blueprint-recorder&branch=main',
-					);
-					break;
-				default:
-					require_once ABSPATH . 'wp-admin/includes/plugin-install.php';
-					$response = \plugins_api(
-						'plugin_information',
-						(object) array(
-							'slug' => $slug,
-						)
-					);
-					$cache[ $slug ] = false;
-
-					break;
-			}
-			if ( false === $cache[ $slug ] && ! is_wp_error( $response ) && isset( $response->download_link ) ) {
-				if ( 0 === strpos( $response->download_link, 'https://downloads.wordpress.org/plugin/' ) ) {
-					$cache[ $slug ] = array(
-						'resource' => 'wordpress.org/plugins',
-						'slug'     => $slug,
-					);
-				} elseif ( preg_match( '#https://github\.com/([^/]+/[^/]+)/archive/refs/(heads|tags)/([^/]+)\.zip#', $response->download_link, $matches ) ) {
-					$cache[ $slug ] = array(
-						'resource' => 'url',
-						'url'      => "https://github-proxy.com/proxy/?repo={$matches[1]}&release={$matches[3]}",
-					);
-				}
-			}
-
-			set_transient( $cache_key, $cache, DAY_IN_SECONDS );
-
-		}
-		return $cache[ $slug ];
-	}
-
-	public function check_theme_exists( $slug ) {
-		$cache_key = 'expose_blueprints_theme_exists';
-		$cache = get_transient( $cache_key );
-		if ( false === $cache ) {
-			$cache = array();
-		}
-
-		if ( ! isset( $cache[ $slug ] ) ) {
-			require_once ABSPATH . 'wp-admin/includes/theme.php';
-			$response = \themes_api(
-				'theme_information',
-				(object) array(
-					'slug' => $slug,
-				)
+		if ( $plugin_resource ) {
+			$plugin_data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin );
+			$plugin_steps[ $slug ] = array(
+				'step'       => 'installPlugin',
+				'pluginData' => $plugin_resource,
+				'name'       => $plugin_data['Name'],
+				'info'       => '',
 			);
-			$cache[ $slug ] = ! is_wp_error( $response );
-			set_transient( $cache_key, $cache, DAY_IN_SECONDS );
 
-		}
-		return $cache[ $slug ];
-	}
-
-	public function generate_media_step() {
-
-		return array(
-			'step'          => 'unzip',
-			'zipFile'       => array(
-				'resource' => 'url',
-				'url'      => 'https://playground.wordpress.net/cors-proxy.php?MEDIA_ZIP_URL',
-			),
-			'extractToPath' => '/wordpress/wp-content/uploads',
-		);
-	}
-
-	public function generate_blueprint() {
-		global $wp_version;
-		$steps = array();
-
-		$plugins = get_option( 'active_plugins' );
-		$plugin_steps = array();
-		$ignore = array();
-		$ignore_all_plugins = false;
-		$ignore_theme = false;
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended
-		if ( isset( $_GET['ignore'] ) ) {
-			// This is just a comma separated list of plugin slugs that is queried.
-			$ignore = explode( ',', wp_unslash( $_GET['ignore'] ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		}
-		if ( isset( $_GET['ignore_all_plugins'] ) ) {
-			$ignore_all_plugins = true;
-		}
-		if ( isset( $_GET['ignore_theme'] ) ) {
-			$ignore_theme = true;
-		}
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended
-		$plugin_steps = array();
-		$dependent_upon = array();
-		foreach ( $plugins as $plugin ) {
-			$slug = explode( '/', $plugin )[0];
-			if ( in_array( $slug, $ignore ) || $ignore_all_plugins ) {
-				continue;
-			}
-			$plugin_resource = $this->get_plugin_resource( $slug );
-
-			if ( $plugin_resource ) {
-				$plugin_data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin );
-				$plugin_steps[ $slug ] = array(
-					'step'       => 'installPlugin',
-					'pluginData' => $plugin_resource,
-					'name'       => $plugin_data['Name'],
-					'info'       => '',
-				);
-
-				if ( isset( $plugin_data['RequiresPlugins'] ) && ! empty( $plugin_data['RequiresPlugins'] ) ) {
-					foreach ( explode( ',', $plugin_data['RequiresPlugins'] ) as $dependent ) {
-						if ( ! isset( $dependent_upon[ $dependent ] ) ) {
-							$dependent_upon[ $dependent ] = array();
-						}
-						$dependent_upon[ $dependent ][] = $slug;
+			if ( isset( $plugin_data['RequiresPlugins'] ) && ! empty( $plugin_data['RequiresPlugins'] ) ) {
+				foreach ( explode( ',', $plugin_data['RequiresPlugins'] ) as $dependent ) {
+					if ( ! isset( $dependent_upon[ $dependent ] ) ) {
+						$dependent_upon[ $dependent ] = array();
 					}
+					$dependent_upon[ $dependent ][] = $slug;
 				}
-			} else {
-				$this->ignored_plugins[] = $slug;
 			}
-		}
-
-		foreach ( $dependent_upon as $plugin => $dependents ) {
-			if ( ! isset( $plugin_steps[ $plugin ] ) ) {
-				continue;
-			}
-			$plugin_steps[ $plugin ]['info'] = ' (prioritized because of ' . implode(
-				', ',
-				array_map(
-					function ( $dependent ) use ( $plugin_steps ) {
-						return $plugin_steps[ $dependent ]['name'];
-					},
-					$dependents
-				)
-			) . ')';
-			$steps[] = $plugin_steps[ $plugin ];
-			unset( $plugin_steps[ $plugin ] );
-		}
-		foreach ( $plugin_steps as $plugin => $step ) {
-			$steps[] = $step;
-		}
-
-		$theme = wp_get_theme();
-		if ( ! in_array( $theme->get( 'TextDomain' ), $ignore ) && $this->check_theme_exists( $theme->get( 'TextDomain' ) ) && ! $ignore_theme ) {
-			$steps[] = array(
-				'step'         => 'installTheme',
-				'themeZipFile' => array(
-					'resource' => 'wordpress.org/themes',
-					'slug'     => $theme->get( 'TextDomain' ),
-				),
-			);
 		} else {
-			$this->ignored_plugins[] = $theme->get( 'TextDomain' );
+			$this->ignored_plugins[] = $slug;
 		}
-
-		$site_options = array();
-		foreach ( array(
-			'blogname',
-			'blogdescription',
-			'start_of_week',
-			'timezone_string',
-			'date_format',
-			'time_format',
-			'permalink_structure',
-			'rss_use_excerpt',
-		) as $name ) {
-			$site_options[ $name ] = get_option( $name );
-		}
-
-		$steps[] = array(
-			'step'    => 'setSiteOptions',
-			'options' => $site_options,
-		);
-
-		$blueprint = array(
-			'landingPage'         => '/',
-			'preferredVersions'   => array(
-				'php' => substr( phpversion(), 0, 3 ),
-				'wp'  => $wp_version,
-			),
-			'phpExtensionBundles' => array( 'kitchen-sink' ),
-			'features'            => array(
-				'networking' => true,
-			),
-			'login'               => true,
-			'steps'               => $steps,
-		);
-
-		return $blueprint;
 	}
 
-	public function render_admin_page() {
-		$blueprint = $this->generate_blueprint();
+	foreach ( $dependent_upon as $plugin => $dependents ) {
+		if ( ! isset( $plugin_steps[ $plugin ] ) ) {
+			continue;
+		}
+		$plugin_steps[ $plugin ]['info'] = ' (prioritized because of ' . implode(
+			', ',
+			array_map(
+				function ( $dependent ) use ( $plugin_steps ) {
+					return $plugin_steps[ $dependent ]['name'];
+				},
+				$dependents
+			)
+		) . ')';
+		$steps[] = $plugin_steps[ $plugin ];
+		unset( $plugin_steps[ $plugin ] );
+	}
+	foreach ( $plugin_steps as $plugin => $step ) {
+		$steps[] = $step;
+	}
 
-		?><div class="wrap">
+	$theme = wp_get_theme();
+	if ( ! in_array( $theme->get( 'TextDomain' ), $ignore ) && $this->check_theme_exists( $theme->get( 'TextDomain' ) ) && ! $ignore_theme ) {
+		$steps[] = array(
+			'step'         => 'installTheme',
+			'themeZipFile' => array(
+				'resource' => 'wordpress.org/themes',
+				'slug'     => $theme->get( 'TextDomain' ),
+			),
+		);
+	} else {
+		$this->ignored_plugins[] = $theme->get( 'TextDomain' );
+	}
+
+	$site_options = array();
+	foreach ( array(
+		'blogname',
+		'blogdescription',
+		'start_of_week',
+		'timezone_string',
+		'date_format',
+		'time_format',
+		'permalink_structure',
+		'rss_use_excerpt',
+	) as $name ) {
+		$site_options[ $name ] = get_option( $name );
+	}
+
+	$steps[] = array(
+		'step'    => 'setSiteOptions',
+		'options' => $site_options,
+	);
+
+	$blueprint = array(
+		'landingPage'         => '/',
+		'preferredVersions'   => array(
+			'php' => substr( phpversion(), 0, 3 ),
+			'wp'  => $wp_version,
+		),
+		'phpExtensionBundles' => array( 'kitchen-sink' ),
+		'features'            => array(
+			'networking' => true,
+		),
+		'login'               => true,
+		'steps'               => $steps,
+	);
+
+	return $blueprint;
+}
+
+public function render_admin_page() {
+	$blueprint = $this->generate_blueprint();
+
+	?><div class="wrap">
 		<h1>Blueprint</h1>
 			<style>
 				details summary  {
@@ -319,9 +319,9 @@ class BlueprintRecorder {
 			<details <?php echo get_option( 'blueprint_recorder_disabled' ) ? '' : 'open'; ?> id="select-sql-log">
 				<summary>Record SQL Queries <span class="checked"></span></summary>
 					<form method="post">
-						<?php echo wp_nonce_field( 'blueprint' ); ?>
+					<?php echo wp_nonce_field( 'blueprint' ); ?>
 						<p>This will record INSERT, UPDATE, and DELETE queries that can then be inserted in the blueprint.</p>
-						<?php if ( get_option( 'blueprint_recorder_disabled' ) ) : ?>
+					<?php if ( get_option( 'blueprint_recorder_disabled' ) ) : ?>
 							<button name="start-recording">Start Recording Modifying SQL Queries</button>
 						<?php else : ?>
 							<button name="stop-recording">Stop Recording Modifying SQL Queries</button>
@@ -332,41 +332,44 @@ class BlueprintRecorder {
 					<a href="<?php echo esc_url( admin_url( 'admin-post.php?action=clear_sql_logs' ) ); ?>">Clear all SQL logs</a><br/>
 
 					<select id="sql-log" multiple="multiple" size="10" style="max-width: 100%; width: 100%">
-					<?php
-					foreach ( get_posts(
-						array(
-							'post_type'      => 'sql_log',
-							'posts_per_page' => -1,
-						)
-					) as $post ) :
-						?>
+				<?php
+				$has_log = false;
+				foreach ( get_posts(
+					array(
+						'post_type'      => 'sql_log',
+						'posts_per_page' => -1,
+					)
+				) as $post ) :
+					?>
 						<option value="<?php echo esc_attr( $post->post_content ); ?>" selected="selected"><?php echo esc_html( $post->post_content ); ?></option>
 					<?php endforeach; ?>
+					<?php if ( ! $has_log ) : ?>
+						<option value="" disabled="disabled">Logged SQL Queries will be displayed here</option>
 					</select>
 			</details>
 
 			<details id="select-pages">
 				<summary>Pages <span class="checked"></span></summary>
-			<?php foreach ( get_pages( array() ) as $page ) : ?>
+						<?php foreach ( get_pages( array() ) as $page ) : ?>
 					<label><input type="checkbox" data-id="<?php echo esc_attr( $page->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $page->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $page->post_content ) ); ?>" /> <?php echo esc_html( $page->post_title ); ?></label><br/>
 				<?php endforeach; ?>
 			</details>
 
 			<details id="select-template-parts">
 				<summary>Template Parts <span class="checked"></span></summary>
-				<?php
-				foreach ( get_posts(
-					array(
-						'post_type'   => 'wp_template_part',
-						'numberposts' => -1,
-						'taxonomy'    => 'wp_theme',
-						'term'        => wp_get_theme()->get_stylesheet(),
-					)
-				) as $template_part ) :
-					?>
+						<?php
+						foreach ( get_posts(
+							array(
+								'post_type'   => 'wp_template_part',
+								'numberposts' => -1,
+								'taxonomy'    => 'wp_theme',
+								'term'        => wp_get_theme()->get_stylesheet(),
+							)
+						) as $template_part ) :
+							?>
 					<label><input type="checkbox" data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
 
-				<?php endforeach; ?>
+						<?php endforeach; ?>
 			</details>
 
 			<details>
@@ -381,12 +384,12 @@ class BlueprintRecorder {
 				<ul id="additionalconstants">
 				</ul>
 				<datalist id="constants">
-					<?php foreach ( get_defined_constants() as $name => $value ) : ?>
+						<?php foreach ( get_defined_constants() as $name => $value ) : ?>
 						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $name ); ?>" />
 					<?php endforeach; ?>
 				</datalist>
 				<datalist id="constant-values">
-					<?php foreach ( get_defined_constants() as $name => $value ) : ?>
+						<?php foreach ( get_defined_constants() as $name => $value ) : ?>
 						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" />
 					<?php endforeach; ?>
 				</datalist>
@@ -399,12 +402,12 @@ class BlueprintRecorder {
 				<summary>Options <span class="checked"></span></summary>
 				<ul id="additionaloptions"></ul>
 				<datalist id="options">
-					<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
+						<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
 						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $name ); ?>" />
 					<?php endforeach; ?>
 				</datalist>
 				<datalist id="option-values">
-					<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
+						<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
 						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" />
 					<?php endforeach; ?>
 				</datalist>
@@ -417,8 +420,8 @@ class BlueprintRecorder {
 				<summary>Plugins <span class="checked"></span></summary>
 					<a href="" id="select-all-plugins">Select all</a> <a href="" id="select-none-plugins">Select none</a>
 					<ul>
-					<?php foreach ( $blueprint['steps'] as $k => $step ) : ?>
-						<?php if ( 'installPlugin' === $step['step'] ) : ?>
+						<?php foreach ( $blueprint['steps'] as $k => $step ) : ?>
+							<?php if ( 'installPlugin' === $step['step'] ) : ?>
 						<li class="plugin" id="plugin_<?php echo esc_attr( $k ); ?>"><label><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" value="<?php echo esc_attr( $k ); ?>" /> <?php echo esc_html( $step['name'] . $step['info'] ); ?></label></li>
 					<?php endif; ?>
 					<?php endforeach; ?>
@@ -432,8 +435,8 @@ class BlueprintRecorder {
 			<details id="select-users">
 				<summary>Users <span class="checked"></span></summary>
 				<ul>
-					<?php foreach ( get_users() as $u ) : ?>
-						<?php if ( 'admin' !== $u->user_login ) : ?>
+						<?php foreach ( get_users() as $u ) : ?>
+							<?php if ( 'admin' !== $u->user_login ) : ?>
 							<li>
 								<input type="checkbox" data-login="<?php echo esc_attr( $u->user_login ); ?>" data-name="<?php echo esc_attr( $u->display_name ); ?>" data-role="<?php echo esc_attr( $u->roles[0] ); ?>" onchange="updateBlueprint()" id="user_<?php echo esc_attr( $u->user_login ); ?>" /> <label for="user_<?php echo esc_attr( $u->user_login ); ?>"><?php echo esc_html( $u->display_name ); ?></label>
 								<label class="password">Password: <input type="text" value="" placeholder="Set a password in the blueprint" onchange="updateBlueprint()"/></label><br/>
@@ -839,163 +842,163 @@ class BlueprintRecorder {
 				});
 			</script>
 		</div>
-		<?php
-	}
-
-	public function add_admin_menu() {
-		add_menu_page(
-			'Blueprint',       // Page title.
-			'Blueprint',       // Menu title.
-			'manage_options',  // Capability.
-			'blueprint',       // Menu slug.
-			array( $this, 'render_admin_page' ), // Callback.
-			'dashicons-list-view'     // Icon.
-		);
-		add_action( 'load-toplevel_page_blueprint', array( $this, 'process_blueprint_admin' ) );
-	}
-
-	public function process_blueprint_admin() {
-		if ( ! isset( $_POST['_wpnonce'] ) ) {
-			return;
-		}
-		if ( ! wp_verify_nonce( $_POST['_wpnonce'], 'blueprint' ) ) {
-			return;
-		}
-		if ( isset( $_POST['stop-recording'] ) ) {
-			update_option( 'blueprint_recorder_disabled', true );
-		} elseif ( isset( $_POST['start-recording'] ) ) {
-			delete_option( 'blueprint_recorder_disabled' );
-		}
-	}
-
-	public function init() {
-		if ( isset( $_GET['media_zip_download'] ) ) {
-			$uploads = wp_upload_dir();
-			$media_dir = $uploads['basedir'];
-			$zip_file = 'media-files.zip';
-
-			// Create a new ZipArchive instance
-			$zip = new ZipArchive();
-			if ( $zip->open( $zip_file, ZipArchive::CREATE | ZipArchive::OVERWRITE ) === true ) {
-				$files = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $media_dir ) );
-
-				foreach ( $files as $file ) {
-					if ( ! $file->isDir() ) {
-						$zip->addFile( $file->getRealPath(), str_replace( $media_dir . '/', '', $file->getRealPath() ) );
+						<?php
 					}
-				}
-				$zip->close();
 
-				// Force download the ZIP file
-				header( 'Content-Type: application/zip' );
-				header( 'Content-disposition: attachment; filename=' . basename( $zip_file ) );
-				header( 'Content-Length: ' . filesize( $zip_file ) );
+					public function add_admin_menu() {
+						add_menu_page(
+							'Blueprint',       // Page title.
+							'Blueprint',       // Menu title.
+							'manage_options',  // Capability.
+							'blueprint',       // Menu slug.
+							array( $this, 'render_admin_page' ), // Callback.
+							'dashicons-list-view'     // Icon.
+						);
+						add_action( 'load-toplevel_page_blueprint', array( $this, 'process_blueprint_admin' ) );
+					}
 
-				// Clear output buffer
-				ob_clean();
-				flush();
+					public function process_blueprint_admin() {
+						if ( ! isset( $_POST['_wpnonce'] ) ) {
+							return;
+						}
+						if ( ! wp_verify_nonce( $_POST['_wpnonce'], 'blueprint' ) ) {
+							return;
+						}
+						if ( isset( $_POST['stop-recording'] ) ) {
+							update_option( 'blueprint_recorder_disabled', true );
+						} elseif ( isset( $_POST['start-recording'] ) ) {
+							delete_option( 'blueprint_recorder_disabled' );
+						}
+					}
 
-				readfile( $zip_file );
+					public function init() {
+						if ( isset( $_GET['media_zip_download'] ) ) {
+							$uploads = wp_upload_dir();
+							$media_dir = $uploads['basedir'];
+							$zip_file = 'media-files.zip';
 
-				// Delete the zip file from the server after download
-				unlink( $zip_file );
-				exit;
-			} else {
-				echo 'Failed to create ZIP file.';
-			}
-		}
+							// Create a new ZipArchive instance
+							$zip = new ZipArchive();
+							if ( $zip->open( $zip_file, ZipArchive::CREATE | ZipArchive::OVERWRITE ) === true ) {
+								$files = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $media_dir ) );
 
-		if ( get_option( 'blueprint_recorder_disabled' ) ) {
-			$this->is_enabled = false;
-		}
+								foreach ( $files as $file ) {
+									if ( ! $file->isDir() ) {
+										$zip->addFile( $file->getRealPath(), str_replace( $media_dir . '/', '', $file->getRealPath() ) );
+									}
+								}
+								$zip->close();
 
-		register_post_type(
-			'sql_log',
-			array(
-				'labels'          => array(
-					'name'          => 'SQL Logs',
-					'singular_name' => 'SQL Log',
-				),
-				'public'          => false,
-				'show_ui'         => true,
-				'capability_type' => 'post',
-				'supports'        => array( 'title', 'editor' ),
-			)
-		);
-	}
+								// Force download the ZIP file
+								header( 'Content-Type: application/zip' );
+								header( 'Content-disposition: attachment; filename=' . basename( $zip_file ) );
+								header( 'Content-Length: ' . filesize( $zip_file ) );
 
-	public function log_query( $query ) {
-		if (
-			! $this->is_enabled
-			// If we are already logging, do not log again.
-			|| $this->is_logging
-			|| ( defined( 'WP_INSTALLING' ) && WP_INSTALLING )
-			|| wp_doing_cron() ) {
-			return $query;
-		}
+								// Clear output buffer
+								ob_clean();
+								flush();
 
-		// Log only INSERT and UPDATE queries.
-		if ( ! preg_match( '/^\s*(INSERT|UPDATE)\s/i', $query ) ) {
-			return $query;
-		}
-		// Don't log option changes.
-		if ( strpos( $query, 'wp_options' ) !== false ) {
-			return $query;
-		}
-		// Don't log certain usermeta changes.
-		if ( strpos( $query, 'wp_usermeta' ) !== false ) {
-			if ( strpos( $query, 'wp_user-settings-time' ) !== false ) {
-				return $query;
-			}
-			if ( strpos( $query, 'session_tokens' ) !== false ) {
-				return $query;
-			}
-		}
-		// Don't log auto-drafts.
-		if ( strpos( $query, 'auto-draft' ) !== false ) {
-			return $query;
-		}
+								readfile( $zip_file );
 
-		// make sure the post content is not modified
-		remove_all_filters( 'content_save_pre' );
-		remove_all_filters( 'content_edit_pre' );
+								// Delete the zip file from the server after download
+								unlink( $zip_file );
+								exit;
+							} else {
+								echo 'Failed to create ZIP file.';
+							}
+						}
 
-		$this->is_logging = true;
-		wp_insert_post(
-			array(
-				'post_type'    => 'sql_log',
-				'post_title'   => current_time( 'mysql' ),
-				'post_content' => $query,
-				'post_status'  => 'publish',
-			)
-		);
-		$this->is_logging = false;
+						if ( get_option( 'blueprint_recorder_disabled' ) ) {
+							$this->is_enabled = false;
+						}
 
-		return $query;
-	}
+						register_post_type(
+							'sql_log',
+							array(
+								'labels'          => array(
+									'name'          => 'SQL Logs',
+									'singular_name' => 'SQL Log',
+								),
+								'public'          => false,
+								'show_ui'         => true,
+								'capability_type' => 'post',
+								'supports'        => array( 'title', 'editor' ),
+							)
+						);
+					}
 
-	public function clear_sql_logs() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( 'Permission denied' );
-		}
+					public function log_query( $query ) {
+						if (
+							! $this->is_enabled
+							// If we are already logging, do not log again.
+							|| $this->is_logging
+							|| ( defined( 'WP_INSTALLING' ) && WP_INSTALLING )
+							|| wp_doing_cron() ) {
+							return $query;
+						}
 
-		$args = array(
-			'post_type'      => 'sql_log',
-			'posts_per_page' => -1,
-		);
+						// Log only INSERT and UPDATE queries.
+						if ( ! preg_match( '/^\s*(INSERT|UPDATE)\s/i', $query ) ) {
+							return $query;
+						}
+						// Don't log option changes.
+						if ( strpos( $query, 'wp_options' ) !== false ) {
+							return $query;
+						}
+						// Don't log certain usermeta changes.
+						if ( strpos( $query, 'wp_usermeta' ) !== false ) {
+							if ( strpos( $query, 'wp_user-settings-time' ) !== false ) {
+								return $query;
+							}
+							if ( strpos( $query, 'session_tokens' ) !== false ) {
+								return $query;
+							}
+						}
+						// Don't log auto-drafts.
+						if ( strpos( $query, 'auto-draft' ) !== false ) {
+							return $query;
+						}
 
-		$query = new WP_Query( $args );
+						// make sure the post content is not modified
+						remove_all_filters( 'content_save_pre' );
+						remove_all_filters( 'content_edit_pre' );
 
-		while ( $query->have_posts() ) {
-			$query->the_post();
-			wp_delete_post( get_the_ID(), true );
-		}
+						$this->is_logging = true;
+						wp_insert_post(
+							array(
+								'post_type'    => 'sql_log',
+								'post_title'   => current_time( 'mysql' ),
+								'post_content' => $query,
+								'post_status'  => 'publish',
+							)
+						);
+						$this->is_logging = false;
 
-		wp_reset_postdata();
+						return $query;
+					}
 
-		wp_safe_redirect( admin_url( 'admin.php?page=sql-query-logger' ) );
-		exit;
-	}
+					public function clear_sql_logs() {
+						if ( ! current_user_can( 'manage_options' ) ) {
+							wp_die( 'Permission denied' );
+						}
+
+						$args = array(
+							'post_type'      => 'sql_log',
+							'posts_per_page' => -1,
+						);
+
+						$query = new WP_Query( $args );
+
+						while ( $query->have_posts() ) {
+							$query->the_post();
+							wp_delete_post( get_the_ID(), true );
+						}
+
+						wp_reset_postdata();
+
+						wp_safe_redirect( admin_url( 'admin.php?page=sql-query-logger' ) );
+						exit;
+					}
 }
 
 new BlueprintRecorder();
