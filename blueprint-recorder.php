@@ -239,40 +239,6 @@ class BlueprintRecorder {
 			'options' => $site_options,
 		);
 
-		$steps[] = array(
-			'step'   => 'defineWpConfigConsts',
-			'consts' => array( 'WP_DEBUG' => 'true' ),
-		);
-
-		$args = array(
-			'post_type'      => 'sql_log',
-			'posts_per_page' => -1,
-			'orderby'        => 'ID',
-			'order'          => 'ASC',
-		);
-
-		$query = new WP_Query( $args );
-
-		$sql_logs = array();
-		if ( $query->have_posts() ) {
-			while ( $query->have_posts() ) {
-				$query->the_post();
-				$sql_logs[] = str_replace( PHP_EOL, '\n', get_the_content() );
-			}
-		}
-
-		wp_reset_postdata();
-		if ( ! empty( $sql_logs ) ) {
-			$steps[] = array(
-				'step' => 'runSql',
-				'sql'  => array(
-					'resource' => 'literal',
-					'name'     => 'replay.sql',
-					'contents' => join( ";\n", $sql_logs ),
-				),
-			);
-		}
-
 		$blueprint = array(
 			'landingPage'         => '/',
 			'preferredVersions'   => array(
@@ -319,18 +285,55 @@ class BlueprintRecorder {
 					display: inline;
 				}
 			</style>
-			<details <?php echo get_option( 'blueprint_recorder_disabled' ) ? '' : 'open'; ?>>
-				<summary>Record SQL Queries</summary>
+			<details <?php echo get_option( 'blueprint_recorder_disabled' ) ? '' : 'open'; ?> id="select-sql-log">
+				<summary>Record SQL Queries <span class="checked"></span></summary>
 					<form method="post">
-					<?php echo wp_nonce_field( 'blueprint' ); ?>
-					<p>This will record INSERT, UPDATE, and DELETE queries that can then be inserted in the blueprint.</p>
-					<?php if ( get_option( 'blueprint_recorder_disabled' ) ) : ?>
-						<button name="start-recording">Start Recording Modifying SQL Queries</button>
-					<?php else : ?>
-						<button name="stop-recording">Stop Recording Modifying SQL Queries</button>
-					<?php endif; ?>
-				</form>
+						<?php echo wp_nonce_field( 'blueprint' ); ?>
+						<p>This will record INSERT, UPDATE, and DELETE queries that can then be inserted in the blueprint.</p>
+						<?php if ( get_option( 'blueprint_recorder_disabled' ) ) : ?>
+							<button name="start-recording">Start Recording Modifying SQL Queries</button>
+						<?php else : ?>
+							<button name="stop-recording">Stop Recording Modifying SQL Queries</button>
+						<?php endif; ?>
+					</form>
+
+					<a href="" id="select-all-sql-log">Select all</a> <a href="" id="select-none-sql-log">Select none</a>
+					<a href="<?php echo esc_url( admin_url( 'admin-post.php?action=clear_sql_logs' ) ); ?>">Clear all SQL logs</a><br/>
+
+					<select id="sql-log" multiple="multiple" size="10">
+					<?php
+					foreach ( get_posts(
+						array(
+							'post_type'      => 'sql_log',
+							'posts_per_page' => -1,
+						)
+					) as $post ) :
+						?>
+						<option value="<?php echo esc_attr( $post->post_content ); ?>" selected="selected"><?php echo esc_html( $post->post_content ); ?></option>
+					<?php endforeach; ?>
+					</select>
 			</details>
+
+			<details id="select-constants">
+				<summary>Constants <span class="checked"></span></summary>
+				<ul id="additionalconstants">
+				</ul>
+				<datalist id="constants">
+					<?php foreach ( get_defined_constants() as $name => $value ) : ?>
+						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $name ); ?>" />
+					<?php endforeach; ?>
+				</datalist>
+				<datalist id="constant-values">
+					<?php foreach ( get_defined_constants() as $name => $value ) : ?>
+						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" />
+					<?php endforeach; ?>
+				</datalist>
+				<input type="text" id="constant-name" list="constants" placeholder="Constant Name" size="30" onchange="updateConstantValue()" onkeyup="updateConstantValue()"/>
+				<span id="constant-value"></span>
+				<button onclick="addConstantToBlueprint()">Add</button>
+
+			</details>
+
 			<details id="select-pages">
 				<summary>Add Pages <span class="checked"></span></summary>
 			<?php foreach ( get_pages( array() ) as $page ) : ?>
@@ -382,11 +385,13 @@ class BlueprintRecorder {
 			<details id="select-plugins">
 				<summary>Plugins <span class="checked"></span></summary>
 					<p>You can drag plugins to put them in the right loading order</p>
+					<ul>
 					<?php foreach ( $blueprint['steps'] as $k => $step ) : ?>
 						<?php if ( 'installPlugin' === $step['step'] ) : ?>
-						<label class="plugin" id="plugin_<?php echo esc_attr( $k ); ?>"><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" value="<?php echo esc_attr( $k ); ?>" /> <?php echo esc_html( $step['name'] ); ?></label><br/>
+						<li class="plugin" id="plugin_<?php echo esc_attr( $k ); ?>"><label><input type="checkbox" id="use_plugin_<?php echo esc_attr( $k ); ?>" checked onchange="updateBlueprint()" value="<?php echo esc_attr( $k ); ?>" /> <?php echo esc_html( $step['name'] ); ?></label></li>
 					<?php endif; ?>
 					<?php endforeach; ?>
+					</ul>
 			</details>
 
 			<details id="select-theme">
@@ -433,16 +438,23 @@ class BlueprintRecorder {
 				}
 				const additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '{}' );
 				const additionalOptionsList = document.getElementById('additionaloptions');
-				for ( const key in additionalOptions ) {
-					if ( additionalOptions.hasOwnProperty( key ) ) {
+				for ( const optionKey in additionalOptions ) {
+					if ( additionalOptions.hasOwnProperty( optionKey ) ) {
 						const li = document.createElement('li');
-						const k = document.createElement('span');
-						k.textContent = key;
-						li.appendChild(k);
-						const value = document.createElement('tt');
-						value.textContent = additionalOptions[key];
+						const key = document.createElement('input');
+						key.type = 'text';
+						key.name = 'key';
+						key.placeholder = 'Key';
+						key.value = optionKey;
+						li.appendChild(key);
+						const value = document.createElement('input');
+						value.type = 'text';
+						value.name = 'value';
+						value.placeholder = 'Value';
+						value.value = additionalOptions[key];
 						li.appendChild(value);
 						additionalOptionsList.appendChild(li);
+
 					}
 				}
 				const users = JSON.parse( localStorage.getItem( 'blueprint_recorder_users' ) || '[]' );
@@ -451,6 +463,34 @@ class BlueprintRecorder {
 						checkbox.checked = true;
 					}
 				} );
+				const constants = JSON.parse( localStorage.getItem( 'blueprint_recorder_constants' ) || '{}' );
+				const constantsList = document.getElementById('additionalconstants');
+				for ( const constantKey in constants ) {
+					if ( constants.hasOwnProperty( constantKey ) ) {
+						const checkbox = document.querySelector( '#select-constants input[type="checkbox"][value="' + constantKey + '"]' );
+						if ( checkbox ) {
+							checkbox.checked = true;
+							if ( typeof constants[constantKey] === 'string' ) {
+								checkbox.nextSibling.value = constants[constantKey];
+							}
+						} else {
+							const li = document.createElement('li');
+							const key = document.createElement('input');
+							key.type = 'text';
+							key.name = 'key';
+							key.placeholder = 'Key';
+							key.value = constantKey;
+							li.appendChild(key);
+							const value = document.createElement('input');
+							value.type = 'text';
+							value.name = 'value';
+							value.placeholder = 'Value';
+							value.value = constants[constantKey];
+							li.appendChild(value);
+							constantsList.appendChild(li);
+						}
+					}
+				}
 				const pages = JSON.parse( localStorage.getItem( 'blueprint_recorder_pages' ) || '[]' );
 				document.querySelectorAll( '#select-pages input[type="checkbox"]' ).forEach( function ( checkbox ) {
 					if ( pages.includes( checkbox.getAttribute('data-id') ) ) {
@@ -484,6 +524,7 @@ class BlueprintRecorder {
 							'extractToPath' : '/wordpress/wp-content/uploads',
 						} );
 					}
+					let last_step = null;
 					const steps = [], plugins = [];
 					for ( let i = 0; i < blueprint.steps.length; i++ ) {
 						if ( blueprint.steps[i].step === 'installPlugin' ) {
@@ -493,6 +534,10 @@ class BlueprintRecorder {
 							}
 							localStorage.removeItem( 'blueprint_recorder_ignore_plugin_' + blueprint.steps[i].name );
 							delete blueprint.steps[i].name;
+							if ( blueprint.steps[i].pluginData.url.indexOf('blueprint-recorder') > -1 ) {
+								last_step = blueprint.steps[i];
+								continue;
+							}
 							plugins.push( blueprint.steps[i].pluginData.slug );
 						}
 						if ( blueprint.steps[i].step === 'setSiteOptions' ) {
@@ -533,6 +578,28 @@ class BlueprintRecorder {
 					}
 					document.querySelector( '#select-users .checked' ).textContent = users.length ? ' (' + users.length + ')' : '';
 
+					const constants = {};
+					document.querySelectorAll( '#select-constants input[name=key]' ).forEach( function ( checkbox ) {
+						if ( checkbox.value ) {
+							if ( checkbox.getAttribute('type') === 'checkbox' ) {
+								checkbox.checked = true;
+							} else if ( checkbox.nextSibling?.tagName === 'INPUT' ) {
+								constants[checkbox.value] = checkbox.nextSibling.value;
+							}
+						}
+					} );
+					if ( Object.values(constants).length ) {
+						localStorage.setItem( 'blueprint_recorder_constants', JSON.stringify( constants ) );
+						steps.push( {
+							'step' : 'defineWpConfigConsts',
+							'consts' : constants,
+						} );
+					} else {
+						localStorage.removeItem( 'blueprint_recorder_constants' );
+					}
+					document.querySelector( '#select-constants .checked' ).textContent = Object.values(constants).length ? ' (' + Object.values(constants).length + ')' : '';
+					document.querySelector( '#select-options .checked' ).textContent = Object.values(additionalOptions).length ? ' (' + Object.values(additionalOptions).length + ')' : '';
+
 					const pages = [];
 					document.querySelectorAll( '#select-pages input[type="checkbox"]' ).forEach( function ( checkbox ) {
 						if ( checkbox.checked ) {
@@ -564,8 +631,30 @@ class BlueprintRecorder {
 					} else {
 						localStorage.removeItem( 'blueprint_recorder_template_parts' );
 					}
-					console.log(template_parts)
 					document.querySelector( '#select-template-parts .checked' ).textContent = template_parts.length ? ' (' + template_parts.length + ')' : '';
+
+					const sqlLog = document.getElementById('sql-log');
+					let sql = '';
+					for ( let i = 0; i < sqlLog.options.length; i++ ) {
+						if ( sqlLog.options[i].selected ) {
+							sql += sqlLog.options[i].value + "; ";
+						}
+					}
+					if ( sql ) {
+						steps.push( {
+							'step' : 'runSql',
+							'sql'  : {
+								'resource' : 'literal',
+								'name'     : 'replay.sql',
+								'contents' : sql,
+							}
+						} );
+					}
+
+					if ( last_step ) {
+						steps.push( last_step );
+					}
+
 					blueprint.steps = steps;
 					blueprint = JSON.stringify( blueprint, null, 4 );
 					const query = 'blueprint-url=data:application/json;base64,' + encodeURIComponent( encodeStringAsBase64( blueprint ) );
@@ -594,48 +683,75 @@ class BlueprintRecorder {
 						localStorage.setItem( 'blueprint_recorder_additional_options', JSON.stringify( additionalOptions ) );
 						const additionalOptionsList = document.getElementById('additionaloptions');
 						const li = document.createElement('li');
-						const key = document.createElement('span');
-						key.textContent = optionName;
+						const key = document.createElement('input');
+						key.type = 'text';
+						key.name = 'key';
+						key.placeholder = 'Key';
+						key.value = optionName;
 						li.appendChild(key);
-						const value = document.createElement('tt');
-						value.textContent = additionalOptions[optionName];
+						const value = document.createElement('input');
+						value.type = 'text';
+						value.name = 'value';
+						value.placeholder = 'Value';
+						value.value = additionalOptions[optionName];
 						li.appendChild(value);
 						additionalOptionsList.appendChild(li);
-						document.getElementById('option-name').value = '';
-						document.getElementById('option-value').textContent = '';
+
 						updateBlueprint();
+					}
+				}
+
+				function updateConstantValue() {
+					const constantName = document.getElementById('constant-name').value;
+					if ( constantName ) {
+						const constantValue = document.querySelector( '#constant-values option[label="' + constantName + '"]' );
+						if ( constantValue ) {
+							document.getElementById('constant-value').textContent = constantValue.getAttribute('value');
+							return constantValue.getAttribute('value');
+						}
+					}
+					return false;
+				}
+				function addConstantToBlueprint() {
+					const constantName = document.getElementById('constant-name').value;
+					if ( constantName ) {
+						constants[constantName] = updateConstantValue();
+						localStorage.setItem( 'blueprint_recorder_constants', JSON.stringify( constants ) );
+						if ( constants[constantName] ) {
+							const checkbox = document.querySelector( '#select-constants input[name=key][value="' + constantName + '"]' );
+							if ( checkbox ) {
+								if ( checkbox.nextSibling?.tagName === 'INPUT' ) {
+									checkbox.nextSibling.value = constants[constantName];
+								} else {
+									checkbox.checked = true;
+								}
+							} else {
+								const li = document.createElement('li');
+								const key = document.createElement('input');
+								key.type = 'text';
+								key.name = 'key';
+								key.placeholder = 'Key';
+								key.value = constantName;
+								li.appendChild(key);
+								const value = document.createElement('input');
+								value.type = 'text';
+								value.name = 'value';
+								value.placeholder = 'Value';
+								value.value = constants[constantName];
+								li.appendChild(value);
+								constantsList.appendChild(li);
+							}
+							updateBlueprint();
+						}
 					}
 				}
 				document.getElementById('zip-url').addEventListener('keyup', updateBlueprint );
 				document.getElementById('blueprint').addEventListener('keyup', updateBlueprint );
-				document.addEventListener('click', function (event) {
-					if ( event.target.matches('#additionaloptions li span') ) {
-						const key = event.target.textContent;
-						if ( confirm('Do you want delete the option ' + key + '?') ) {
-							const additionalOptionsList = document.getElementById('additionaloptions');
-							const li = event.target.closest('li');
-							li.parentNode.removeChild(li);
-							delete additionalOptions[key];
-							localStorage.setItem( 'blueprint_recorder_additional_options', JSON.stringify( additionalOptions ) );
-							updateBlueprint();
-						}
-						return;
-					}
-					if ( event.target.matches('#additionaloptions li tt') ) {
-						// select the text
-						const range = document.createRange();
-						range.selectNodeContents(event.target);
-						const sel = window.getSelection();
-						sel.removeAllRanges();
-						sel.addRange(range);
-						return;
-					}
-
-				});
 
 				const pluginList = document.querySelectorAll('.plugin');
 				pluginList.forEach( function ( plugin ) {
 					plugin.addEventListener('dragstart', function (event) {
+					console.log(event)
 						event.dataTransfer.setData('text/plain', event.target.id);
 					});
 					plugin.addEventListener('dragover', function (event) {
@@ -651,6 +767,12 @@ class BlueprintRecorder {
 							updateBlueprint();
 						}
 					});
+				} );
+
+				document.addEventListener('change', function (event) {
+					if ( event.target.matches('input') ) {
+						updateBlueprint();
+					}
 				} );
 			</script>
 		</div>
