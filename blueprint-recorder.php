@@ -340,7 +340,6 @@ class BlueprintRecorder {
 					</form>
 
 					<a href="" id="select-all-sql-log">Select all</a> <a href="" id="select-none-sql-log">Select none</a>
-					<a href="<?php echo esc_url( admin_url( 'admin-post.php?action=clear_sql_logs' ) ); ?>">Clear all SQL logs</a><br/>
 
 					<select id="sql-log" multiple="multiple" size="10" style="max-width: 100%; width: 100%" onchange="updateBlueprint()" onkeyup="updateBlueprint()">
 				<?php
