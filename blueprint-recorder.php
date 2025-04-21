@@ -290,6 +290,8 @@ class BlueprintRecorder {
 	public function render_admin_page() {
 		$blueprint = $this->generate_blueprint();
 
+		$checked = get_option( 'blueprint_recorder_default_checked' ) ? ' checked' : '';
+
 		?><div class="wrap">
 		<h1>Blueprint</h1>
 			<style>
@@ -352,7 +354,7 @@ class BlueprintRecorder {
 			<details id="select-pages">
 				<summary>Pages <span class="checked"></span></summary>
 						<?php foreach ( get_pages( array() ) as $page ) : ?>
-					<label><input type="checkbox" data-id="<?php echo esc_attr( $page->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $page->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $page->post_content ) ); ?>" /> <?php echo esc_html( $page->post_title ); ?></label><br/>
+					<label><input type="checkbox" <?php echo $checked; ?> data-id="<?php echo esc_attr( $page->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $page->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $page->post_content ) ); ?>" /> <?php echo esc_html( $page->post_title ); ?></label><br/>
 				<?php endforeach; ?>
 			</details>
 
@@ -368,7 +370,7 @@ class BlueprintRecorder {
 							)
 						) as $template_part ) :
 							?>
-					<label><input type="checkbox" data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
+					<label><input type="checkbox" <?php echo $checked; ?> data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
 
 						<?php endforeach; ?>
 			</details>
@@ -439,7 +441,7 @@ class BlueprintRecorder {
 							<?php foreach ( get_users() as $u ) : ?>
 								<?php if ( 'admin' !== $u->user_login ) : ?>
 							<li>
-								<input type="checkbox" data-login="<?php echo esc_attr( $u->user_login ); ?>" data-name="<?php echo esc_attr( $u->display_name ); ?>" data-role="<?php echo esc_attr( $u->roles[0] ); ?>" onchange="updateBlueprint()" id="user_<?php echo esc_attr( $u->user_login ); ?>" /> <label for="user_<?php echo esc_attr( $u->user_login ); ?>"><?php echo esc_html( $u->display_name ); ?></label>
+								<input type="checkbox" <?php echo $checked; ?>  data-login="<?php echo esc_attr( $u->user_login ); ?>" data-name="<?php echo esc_attr( $u->display_name ); ?>" data-role="<?php echo esc_attr( $u->roles[0] ); ?>" onchange="updateBlueprint()" id="user_<?php echo esc_attr( $u->user_login ); ?>" /> <label for="user_<?php echo esc_attr( $u->user_login ); ?>"><?php echo esc_html( $u->display_name ); ?></label>
 								<label class="password">Password: <input type="text" value="" placeholder="Set a password in the blueprint" onchange="updateBlueprint()"/></label><br/>
 							</li>
 						<?php endif; ?>
@@ -447,7 +449,7 @@ class BlueprintRecorder {
 				</ul>
 			</details>
 			<br>
-			→ <a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Start Playground with the blueprint below</a><br/>
+			→ <a id="playground-link" href="https://playground.wordpress.net/#<?php echo esc_attr( str_replace( '%', '%25', wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES ) ) ); ?>" target="_blank">Open a new WordPress Playground with the blueprint below</a><br/>
 			<br>
 			<textarea id="blueprint" cols="120" rows="50" style="font-family: monospace"><?php echo esc_html( wp_json_encode( $blueprint, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ); ?></textarea>
 			<script>
@@ -472,7 +474,7 @@ class BlueprintRecorder {
 						document.getElementById('select-theme').open = true;
 					}
 				}
-				let additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '{}' );
+				let additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '<?php echo wp_json_encode( get_option( 'blueprint_recorder_initial_options', '{}' ) ); ?>' );
 				const additionalOptionsList = document.getElementById('additionaloptions');
 				for ( const optionKey in additionalOptions ) {
 					if ( additionalOptions.hasOwnProperty( optionKey ) ) {
@@ -499,7 +501,7 @@ class BlueprintRecorder {
 						checkbox.checked = true;
 					}
 				} );
-				const constants = JSON.parse( localStorage.getItem( 'blueprint_recorder_constants' ) || '{}' );
+				const constants = JSON.parse( localStorage.getItem( 'blueprint_recorder_constants' ) || '<?php echo wp_json_encode( get_option( 'blueprint_recorder_initial_constants', '{}' ) ); ?>' );
 				const constantsList = document.getElementById('additionalconstants');
 				for ( const constantKey in constants ) {
 					if ( constants.hasOwnProperty( constantKey ) ) {
@@ -706,6 +708,14 @@ class BlueprintRecorder {
 
 					if ( last_step ) {
 						steps.push( last_step );
+						steps.push( {
+							'step' : 'setSiteOptions',
+							'options' : {
+								'blueprint_recorder_initial_constants' : constants,
+								'blueprint_recorder_initial_options' : additionalOptions,
+								'blueprint_recorder_default_checked': true,
+							}
+						} );
 					}
 
 					blueprint.steps = steps;
