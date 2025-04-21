@@ -314,6 +314,37 @@ class BlueprintRecorder {
 					</select>
 			</details>
 
+			<details id="select-pages">
+				<summary>Pages <span class="checked"></span></summary>
+			<?php foreach ( get_pages( array() ) as $page ) : ?>
+					<label><input type="checkbox" data-id="<?php echo esc_attr( $page->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $page->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $page->post_content ) ); ?>" /> <?php echo esc_html( $page->post_title ); ?></label><br/>
+				<?php endforeach; ?>
+			</details>
+
+			<details id="select-template-parts">
+				<summary>Template Parts <span class="checked"></span></summary>
+				<?php
+				foreach ( get_posts(
+					array(
+						'post_type'   => 'wp_template_part',
+						'numberposts' => -1,
+						'taxonomy'    => 'wp_theme',
+						'term'        => wp_get_theme()->get_stylesheet(),
+					)
+				) as $template_part ) :
+					?>
+					<label><input type="checkbox" data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" onkeyup="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
+
+				<?php endforeach; ?>
+			</details>
+
+			<details>
+				<summary>Media</summary>
+				<a href="?media_zip_download" download="media-files.zip">Download the ZIP file of all media</a> and then upload it to somewhere web accessible.<br>
+				Then, enter the URL of the uploaded ZIP file: <input type="url" id="zip-url" value="" />. The blueprint below will update.<br>
+			</details>
+
+
 			<details id="select-constants">
 				<summary>Constants <span class="checked"></span></summary>
 				<ul id="additionalconstants">
@@ -328,44 +359,13 @@ class BlueprintRecorder {
 						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" />
 					<?php endforeach; ?>
 				</datalist>
-				<input type="text" id="constant-name" list="constants" placeholder="Constant Name" size="30" onchange="updateConstantValue()" onkeyup="updateConstantValue()"/>
+				<input type="text" id="constant-name" list="constants" placeholder="Constant Name" size="30" onchange="updateConstantValue()" oninput="updateConstantValue()" onkeyup="updateConstantValue()"/>
 				<span id="constant-value"></span>
 				<button onclick="addConstantToBlueprint()">Add</button>
-
-			</details>
-
-			<details id="select-pages">
-				<summary>Add Pages <span class="checked"></span></summary>
-			<?php foreach ( get_pages( array() ) as $page ) : ?>
-					<label><input type="checkbox" data-id="<?php echo esc_attr( $page->ID ); ?>" onchange="updateBlueprint()" data-post_title="<?php echo esc_attr( $page->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $page->post_content ) ); ?>" /> <?php echo esc_html( $page->post_title ); ?></label><br/>
-				<?php endforeach; ?>
-			</details>
-
-			<details id="select-template-parts">
-				<summary>Add Template Parts <span class="checked"></span></summary>
-				<?php
-				foreach ( get_posts(
-					array(
-						'post_type'   => 'wp_template_part',
-						'numberposts' => -1,
-						'taxonomy'    => 'wp_theme',
-						'term'        => wp_get_theme()->get_stylesheet(),
-					)
-				) as $template_part ) :
-					?>
-					<label><input type="checkbox" data-id="<?php echo esc_attr( $template_part->ID ); ?>" onchange="updateBlueprint()" data-post_title="<?php echo esc_attr( $template_part->post_title ); ?>" data-post_content="<?php echo esc_attr( str_replace( PHP_EOL, '\n', $template_part->post_content ) ); ?>"/> <?php echo esc_html( $template_part->post_title ); ?></label><br/>
-
-				<?php endforeach; ?>
-			</details>
-
-			<details>
-				<summary>Add Media</summary>
-				<a href="?media_zip_download" download="media-files.zip">Download the ZIP file of all media</a> and then upload it to somewhere web accessible.<br>
-				Then, enter the URL of the uploaded ZIP file: <input type="url" id="zip-url" value="" />. The blueprint below will update.<br>
 			</details>
 
 			<details id="select-options">
-				<summary>Add Options <span class="checked"></span></summary>
+				<summary>Options <span class="checked"></span></summary>
 				<ul id="additionaloptions"></ul>
 				<datalist id="options">
 					<?php foreach ( wp_load_alloptions() as $name => $value ) : ?>
@@ -377,7 +377,7 @@ class BlueprintRecorder {
 						<option label="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" />
 					<?php endforeach; ?>
 				</datalist>
-				<input type="text" id="option-name" list="options" placeholder="Option Name" size="30" onchange="updateOptionValue()" onkeyup="updateOptionValue()"/>
+				<input type="text" id="option-name" list="options" placeholder="Option Name" size="30" onchange="updateOptionValue()" oninput="updateOptionValue()" onkeyup="updateOptionValue()"/>
 				<span id="option-value"></span>
 				<button onclick="addOptionToBlueprint()">Add</button>
 			</details>
@@ -436,7 +436,7 @@ class BlueprintRecorder {
 						document.getElementById('select-theme').open = true;
 					}
 				}
-				const additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '{}' );
+				let additionalOptions = JSON.parse( localStorage.getItem( 'blueprint_recorder_additional_options' ) || '{}' );
 				const additionalOptionsList = document.getElementById('additionaloptions');
 				for ( const optionKey in additionalOptions ) {
 					if ( additionalOptions.hasOwnProperty( optionKey ) ) {
@@ -451,7 +451,7 @@ class BlueprintRecorder {
 						value.type = 'text';
 						value.name = 'value';
 						value.placeholder = 'Value';
-						value.value = additionalOptions[key];
+						value.value = additionalOptions[optionKey];
 						li.appendChild(value);
 						additionalOptionsList.appendChild(li);
 
@@ -541,10 +541,21 @@ class BlueprintRecorder {
 							plugins.push( blueprint.steps[i].pluginData.slug );
 						}
 						if ( blueprint.steps[i].step === 'setSiteOptions' ) {
-							for ( const key in additionalOptions ) {
-								if ( additionalOptions.hasOwnProperty( key ) ) {
-									blueprint.steps[i].options[key] = additionalOptions[key];
+							additionalOptions = {};
+							document.querySelectorAll( '#select-options input[name=key]' ).forEach( function ( checkbox ) {
+								if ( checkbox.value ) {
+									if ( checkbox.getAttribute('type') === 'checkbox' ) {
+										additionalOptions[checkbox.value] = checkbox.checked;
+									} else if ( checkbox.nextSibling?.tagName === 'INPUT' ) {
+										additionalOptions[checkbox.value] = checkbox.nextSibling.value;
+									}
+									blueprint.steps[i].options[checkbox.value] = additionalOptions[checkbox.value];
 								}
+							} );
+							if ( Object.values(additionalOptions).length ) {
+								localStorage.setItem( 'blueprint_recorder_additional_options', JSON.stringify( additionalOptions ) );
+							} else {
+								localStorage.removeItem( 'blueprint_recorder_additional_options' );
 							}
 						}
 						if ( blueprint.steps[i].step === 'installTheme' ) {
@@ -770,6 +781,11 @@ class BlueprintRecorder {
 				} );
 
 				document.addEventListener('change', function (event) {
+					if ( event.target.matches('input') ) {
+						updateBlueprint();
+					}
+				} );
+				document.addEventListener('keyup', function (event) {
 					if ( event.target.matches('input') ) {
 						updateBlueprint();
 					}
